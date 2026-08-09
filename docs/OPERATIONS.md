@@ -84,6 +84,51 @@ Actions の該当runページから `recs-backup-<番号>` artifact をダウン
 
 ---
 
+## GitHub Pages（Phase 2）
+
+### 初回有効化だけは自動化できない（実測で確定）
+
+Pages の有効化はGUI操作ではなくAPI操作なので自動化を試みたが、**権限の壁で不可能**だった。
+
+```
+actions/configure-pages@v5 (enablement: true) の結果:
+  Get Pages site failed.    Error: Not Found
+  Create Pages site failed. Error: Resource not accessible by integration
+```
+
+理由: Actions の `GITHUB_TOKEN` は `pages: write`（＝デプロイ）までは持てるが、
+**Pagesサイトの新規作成はリポジトリ管理者権限**であり、設計上 `GITHUB_TOKEN` には付与できない。
+クラウドの Claude Code から直接叩く道も、APIプロキシが `/repos/*/pages` を403で塞いでいる:
+
+```
+{"message":"Access to this GitHub API path is not permitted through this proxy."}
+```
+
+### 有効化の方法（どちらか1回だけ）
+
+**A. Settings で有効化（最速・推奨）**
+
+1. https://github.com/Yokottinnn/bubblesnow/settings/pages を開く
+2. **Source を「GitHub Actions」に変更**する
+   ※「Deploy from a branch」を選ぶと deploy-pages.yml が別のエラーで失敗するので注意
+3. 保存すると、次に該当ファイルへ push した時点で自動デプロイされる
+   （すぐ流したい場合は Actions タブから "Deploy to GitHub Pages" を再実行）
+
+**B. PAT を登録して以後も自動化する**
+
+1. repo の管理権限を持つ Personal Access Token を作る
+2. Settings → Secrets and variables → Actions に `PAGES_ADMIN_TOKEN` として登録
+3. deploy-pages.yml がそれを使って**有効化ごと自動で**やる
+
+Aは1回で終わるが、Bにしておくと今後の同種の管理系操作も自動化できる。
+
+### 公開URL
+
+有効化後は `https://yokottinnn.github.io/bubblesnow/` で公開される。
+Phase 1 で manifest のパスを相対化済みなので、このサブパス配信で正しく動くはず。
+
+---
+
 ## その他の操作
 
 ### コードを改修したいとき
