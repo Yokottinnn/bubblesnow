@@ -14,7 +14,7 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches:
-      - claude/work-start-r5b5q3
+      - main
     paths:
       - 'index.html'
       - 'add.html'
@@ -47,16 +47,10 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
         with:
-          # ★Pages の「初回有効化」だけは自動化できない★
-          # GITHUB_TOKEN は pages:write（デプロイ）は持てるが、Pagesサイトの
-          # 新規作成はリポジトリ管理者権限のため付与できず、
-          # "Resource not accessible by integration" で失敗する。
-          #
-          # 有効化の方法は2つ:
-          #   A. Settings → Pages → Source を "GitHub Actions" にする（1回だけ）
-          #   B. repo 管理権限を持つ PAT を Secrets に PAGES_ADMIN_TOKEN として登録する
-          #      → 下の token 指定によりこのステップが自動で有効化する
-          # どちらか済めば、以降のデプロイは GITHUB_TOKEN だけで回る。
+          # Pages の初回有効化は 2026-08-09 に Settings から実施済み。
+          # （GITHUB_TOKEN では作成できない＝リポジトリ管理者権限が必要なため。
+          #   経緯は docs/OPERATIONS.md 参照）
+          # enablement は有効化済みなら何もしないので、そのまま残しておく。
           enablement: true
           token: ${{ secrets.PAGES_ADMIN_TOKEN || secrets.GITHUB_TOKEN }}
 

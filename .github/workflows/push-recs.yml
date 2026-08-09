@@ -1,30 +1,33 @@
 name: Push Recs to Firebase
 
-# このワークフローは「クラウドのClaude CodeからFirebaseへ書き込む」ための踏み台。
-# Claude Code のクラウドセッションは egress ポリシーで Firebase に到達できないが、
-# GitHub Actions のランナーからは到達できるため、ここを経由して書き込む。
+# リサーチ済みレコメンドを Firebase にマージ書き込みする。
 #
-# workflow_dispatch はワークフローが default branch に存在しないと使えないので、
-# 当面は作業ブランチへの push（対象ファイル変更時のみ）で発火させる。
-# main にマージした後は手動実行も使えるようになる。
+# クラウドの Claude Code セッションは egress ポリシーで Firebase に到達できない
+# （CONNECT が 403）ため、ここを踏み台にして書き込む。詳細は docs/OPERATIONS.md。
+#
+# ★手動実行のみ★
+# 以前は作業ブランチへの push で発火させていたが、これは本番データへの書き込みなので
+# 「push したら勝手に書かれる」形は危険。main に載って workflow_dispatch が
+# 使えるようになったので、明示的な手動実行だけに絞る。
 
 on:
-  push:
-    branches:
-      - claude/work-start-r5b5q3
-    paths:
-      - 'data/poikatsu-recs.json'
-      - 'scripts/push-recs.mjs'
-      - '.github/workflows/push-recs.yml'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '書き込むかどうか（true=読んで結果を出すだけ / false=実際に書き込む）'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+        default: 'true'
+        required: true
 
 jobs:
   push-recs:
     runs-on: ubuntu-latest
     env:
-      # ★安全弁★ "true" の間は読み取りと検証だけで、Firebase へは一切書き込まない。
-      # 本番実行するときだけ "false" に変更してコミットする。
-      DRY_RUN: "true"
+      # 既定は必ず dry run。実書き込みは実行時に明示的に false を選んだ時だけ。
+      DRY_RUN: ${{ inputs.dry_run || 'true' }}
       # DB URL は index.html で既に公開されている値。Secret があればそちらを優先する。
       FIREBASE_URL: ${{ secrets.FIREBASE_URL || 'https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app' }}
       # 認証なしで書けている想定。必要になったら Secret を追加する。

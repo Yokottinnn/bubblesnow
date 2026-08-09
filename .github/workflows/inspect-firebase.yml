@@ -7,13 +7,8 @@ name: Inspect Firebase Structure
 # スクリプト側でタスク名・詳細などの中身は一切出力しないようにしてある。
 # artifact も作らない（バックアップ目的ではないため）。
 
+# 読み取り専用なので手動実行のみで十分。
 on:
-  push:
-    branches:
-      - claude/work-start-r5b5q3
-    paths:
-      - 'scripts/inspect-tasks.mjs'
-      - '.github/workflows/inspect-firebase.yml'
   workflow_dispatch:
 
 jobs:
