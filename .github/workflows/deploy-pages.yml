@@ -1,0 +1,63 @@
+name: Deploy to GitHub Pages
+
+# Phase 2: GitHub Pages 公開。
+#
+# 通常は Settings → Pages を手で操作して有効化するが、それは GUI 操作ではなく
+# API 操作なので Actions から実行できる。クラウドの Claude Code セッションは
+# GitHub API プロキシが /repos/*/pages を遮断するため直接は叩けないが、
+# ランナーの GITHUB_TOKEN に pages: write を与えれば configure-pages が
+# enablement: true で Pages 自体を有効化してくれる。
+#
+# ※ workflow_dispatch はデフォルトブランチに無いと使えないため、
+#    main にマージするまでは作業ブランチへの push で発火させる。
+
+on:
+  push:
+    branches:
+      - claude/work-start-r5b5q3
+    paths:
+      - 'index.html'
+      - 'add.html'
+      - 'add-direct.html'
+      - 'recs.html'
+      - 'manifest.json'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 公開は同時に1つだけ。進行中のデプロイは中断しない。
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        with:
+          # Pages が未設定ならここで有効化する（Settings画面の操作が不要になる）
+          enablement: true
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Show published URL
+        run: echo "公開URL ${{ steps.deployment.outputs.page_url }}"
