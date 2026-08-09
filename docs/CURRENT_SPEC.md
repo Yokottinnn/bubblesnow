@@ -213,4 +213,41 @@ location : 場所（任意）
 | add.html | 外部からのタスク追加プロキシ | なし | Make webhook(追加) | Make廃止で要代替 |
 | recs.html | Make生成recsの書き戻し受け皿 | 直接(compat9.23.0, 認証なし) | hash受け渡し | バッチ直PUT化で不要にできる |
 | cleanup.html | dismissed整理のメンテ用 | 直接(compat9.22.0) | なし | apiKey除去済 / 収録可否を判断 |
-| manifest.json | PWAマニフェスト | - | - | start_url `/`→`./` |
+| manifest.json | PWAマニフェスト | - | - | start_url `/`→`./`（Phase 1で修正済み） |
+
+---
+
+## 追記: 本番Firebaseの実測値（2026-08-09、Actions経由で構造のみ取得）
+
+本書の1〜5章はコードを読んで書いたもの。以下は**実データを測った結果**。
+※ リポジトリがpublicのため、Actionsログには中身を出さず構造のみ取得している。
+
+```
+users/yokota 直下のキー: dismissed, dismissedTitles, recommendations, tasks
+
+tasks            : Array / 94件（うち name 有り 94件）
+  status別       : done 75 / active 19
+  id形式         : t+epoch 60 / t+連番 10 / その他 24
+  フィールド出現 : category,icon,id,name,priority,status = 94/94
+                   deadline,demerit,merit,note,url = 88/94
+                   detail 87 / completedAt 67 / wip 46 / location 9 / done 8
+dismissed        : Array / 182件
+dismissedTitles  : Array / 244件
+recommendations  : Array / 9件
+```
+
+### ここから分かる追加の課題
+
+1. **`tasks` は素の Array**（オブジェクトではない）。
+   → `add-direct.html` の「配列に push する」実装で正しいことが裏付けられた。
+2. ⚠️ **`dismissedTitles` が244件**。index.html:213 はこれを**双方向部分一致**で
+   全recに突き合わせる（`t.includes(dt) || dt.includes(t)`）。件数が増えるほど
+   誤一致で新recが黙って消える。実際、今回投入した「楽天ペイ 5と0のつく日エントリー」は
+   この判定に引っかかって除外された。**短い語が1つ混じるだけで大量のrecを巻き込む**構造。
+   → 対策候補: 完全一致＋正規化に変える、期限切れエントリを間引く、上限を設ける。
+3. ⚠️ **legacy `done` フィールドが8件残存**。index.html:306 の移行コード
+   （`t.status?t:...t.done?"done":"active"`）がまだ現役で必要な状態。
+4. **id形式が3種類混在**（`その他` 24件）。ID採番を前提にしたロジックを足すときは注意。
+5. `location` は 9/94 しか入っていない。地図リンクはほぼ未活用。
+6. `tasks` 94件を**毎回まるごと `.set()`** している。件数は今後も増える一方なので、
+   ロストアップデートのリスク（5-2の項目4）は時間とともに悪化する。
