@@ -1,0 +1,30 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BubblesNow</title>
+<style>body{background:#0f0c29;color:#fff;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:20px}.w{max-width:340px}.s{width:22px;height:22px;border:2px solid rgba(255,255,255,.15);border-top-color:#845EF7;border-radius:50%;animation:s .5s linear infinite;margin:0 auto 10px}@keyframes s{to{transform:rotate(360deg)}}.ok{font-size:48px;margin-bottom:10px}.nm{font-size:16px;font-weight:700;margin-bottom:6px}.t{font-size:11px;color:rgba(255,255,255,.4);line-height:1.8}.tag{display:inline-block;padding:2px 8px;border-radius:8px;margin:2px;font-size:10px}.c1{background:rgba(132,94,247,.15);color:#b794f6}.c2{background:rgba(255,212,59,.15);color:#ffd43b}.c3{background:rgba(255,169,77,.15);color:#ffa94d}</style></head>
+<body><div class="w" id="m"><div class="s"></div><div style="font-size:14px">タスク追加中...</div></div>
+<script>
+const p=Object.fromEntries(new URLSearchParams(location.search));
+const fields=["name","category","priority","icon","deadline","detail","merit","demerit","url","note","status"];
+const data={};
+fields.forEach(f=>data[f]=p[f]||"");
+if(!data.status)data.status="active";
+
+if(!data.name){document.getElementById("m").innerHTML="⚠️ タスク名がありません";}
+else{
+fetch("https://hook.us2.make.com/it31k5edbvjv4cgihpo1a4rg54l7y5mx",{
+method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)
+}).then(r=>{
+if(r.ok){
+document.getElementById("m").innerHTML=
+'<div class="ok">✅</div>'+
+'<div class="nm">'+data.icon+' '+data.name+'</div>'+
+'<div class="t">'+
+(data.category?'<span class="tag c1">'+data.category+'</span>':'')+
+(data.priority?'<span class="tag c2">'+data.priority+'</span>':'')+
+(data.deadline?'<span class="tag c3">'+data.deadline+'</span>':'')+
+(data.detail?'<br>'+data.detail:'')+
+'</div>'+
+'<div style="margin-top:16px;font-size:12px;color:rgba(255,255,255,.3)">このページを閉じてOKです</div>';
+}else throw 0;
+}).catch(()=>document.getElementById("m").innerHTML="❌ エラー — リロードしてください");
+}
+</script></body></html>

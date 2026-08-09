@@ -1,0 +1,33 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BubblesNow - おすすめ更新</title>
+<style>body{background:#0f0c29;color:#fff;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:20px}.w{max-width:380px}.s{width:22px;height:22px;border:2px solid rgba(255,255,255,.15);border-top-color:#845EF7;border-radius:50%;animation:s .5s linear infinite;margin:0 auto 10px}@keyframes s{to{transform:rotate(360deg)}}.ok{font-size:48px;margin-bottom:10px}.nm{font-size:16px;font-weight:700;margin-bottom:6px}.t{font-size:12px;color:rgba(255,255,255,.5);line-height:1.8}</style>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body><div class="w" id="m"><div class="s"></div><div style="font-size:14px">おすすめを更新中...</div></div>
+<script>
+"use strict";
+var app=firebase.initializeApp({databaseURL:"https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app"});
+var db=firebase.database();
+
+try{
+  var hash=location.hash.substring(1);
+  if(!hash){document.getElementById("m").innerHTML="⚠️ データがありません";throw"no data";}
+  var json=decodeURIComponent(hash);
+  var recs=JSON.parse(json);
+  if(!Array.isArray(recs)||recs.length===0){document.getElementById("m").innerHTML="⚠️ 不正なデータ形式";throw"bad data";}
+
+  db.ref("users/yokota/recommendations").set(recs).then(function(){
+    document.getElementById("m").innerHTML=
+      '<div class="ok">✅</div>'+
+      '<div class="nm">おすすめ '+recs.length+'件 更新完了</div>'+
+      '<div class="t">アプリで🔄を押すと反映されます<br><br>'+
+      recs.map(function(r){return r.icon+' '+r.title;}).join('<br>')+
+      '</div>'+
+      '<div style="margin-top:20px;font-size:11px;color:rgba(255,255,255,.25)">このページを閉じてOKです</div>';
+  }).catch(function(e){
+    document.getElementById("m").innerHTML="❌ Firebase書き込みエラー: "+e.message;
+  });
+}catch(e){
+  if(e!=="no data"&&e!=="bad data")document.getElementById("m").innerHTML="❌ エラー: "+e;
+}
+</script></body></html>

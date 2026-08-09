@@ -1,0 +1,33 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BubblesNow Cleanup</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<style>body{background:#0f0c29;color:#fff;font-family:-apple-system,sans-serif;padding:20px;text-align:center;}
+button{padding:16px 32px;border-radius:12px;border:none;font-size:16px;font-weight:600;cursor:pointer;margin:10px;}
+.clean{background:linear-gradient(135deg,#51CF66,#40C057);color:#fff;}
+.status{margin-top:20px;font-size:14px;color:rgba(255,255,255,.7);}
+</style></head><body>
+<h2>BubblesNow Dismissed Cleanup</h2>
+<p>現在のdismissed: <span id="count">読み込み中...</span>件</p>
+<div id="list" style="font-size:11px;color:rgba(255,255,255,.4);max-height:200px;overflow:auto;margin:10px;"></div>
+<button class="clean" onclick="cleanup()">クリーンアップ実行（r1-r24のみ残す）</button>
+<div id="status" class="status"></div>
+<script>
+var fc={apiKey:"AIzaSyA8VCVxBiLNMBQFmGH9EjHoJDVPGLbi3pU",authDomain:"nydaytodo-e0f20.firebaseapp.com",databaseURL:"https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"nydaytodo-e0f20"};
+firebase.initializeApp(fc);
+var db=firebase.database();
+db.ref("users/yokota/dismissed").once("value").then(function(s){
+  var d=s.val()||[];
+  document.getElementById("count").textContent=d.length;
+  document.getElementById("list").textContent=JSON.stringify(d);
+});
+function cleanup(){
+  var keep=["r1","r2","r3","r4","r5","r6","r7","r8","r9","r10","r11","r12","r13","r14","r15","r16","r17","r18","r19","r20","r21","r22","r23","r24"];
+  db.ref("users/yokota/dismissed").set(keep).then(function(){
+    document.getElementById("status").innerHTML="✅ クリーンアップ完了！ "+keep.length+"件のみ残しました。<br>アプリに戻って💡→🔄してください。";
+    document.getElementById("count").textContent=keep.length;
+  }).catch(function(e){
+    document.getElementById("status").textContent="❌ エラー: "+e.message;
+  });
+}
+</script></body></html>
