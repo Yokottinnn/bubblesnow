@@ -65,3 +65,41 @@ jobs:
 
       - name: Show published URL
         run: echo "公開URL ${{ steps.deployment.outputs.page_url }}"
+
+      # 公開後のスモークテスト。クラウドの Claude Code セッションからは
+      # github.io も egress ポリシーで見えないため、ここで代わりに確かめる。
+      # Phase 1 で相対化したパスが実配信で効いているかまで検証する。
+      - name: Verify published site
+        run: |
+          set -uo pipefail
+          BASE="${{ steps.deployment.outputs.page_url }}"
+          BASE="${BASE%/}"
+          echo "検証対象: $BASE"
+
+          # 配信が始まるまで少し待つ（最大60秒）
+          for i in $(seq 1 12); do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/" || echo 000)
+            [ "$code" = "200" ] && break
+            echo "  待機中... ($i回目 HTTP $code)"; sleep 5
+          done
+
+          fail=0
+          for p in / /manifest.json /index.html /add.html /add-direct.html /recs.html; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE$p" || echo 000)
+            if [ "$code" = "200" ]; then echo "  ✅ $p -> $code"; else echo "  ❌ $p -> $code"; fail=1; fi
+          done
+
+          echo "--- PWAパスの実配信チェック ---"
+          man=$(curl -sS "$BASE/manifest.json")
+          echo "manifest: $man"
+          echo "$man" | grep -q '"start_url":"\./"' \
+            && echo "  ✅ start_url が相対" || { echo "  ❌ start_url が相対でない"; fail=1; }
+          echo "$man" | grep -q '"scope":"\./"' \
+            && echo "  ✅ scope が相対" || { echo "  ❌ scope が相対でない"; fail=1; }
+
+          link=$(curl -sS "$BASE/" | grep -o '<link rel="manifest"[^>]*>' | head -1)
+          echo "index の参照: $link"
+          echo "$link" | grep -q './manifest.json' \
+            && echo "  ✅ manifest 参照が相対" || { echo "  ❌ manifest 参照が絶対のまま"; fail=1; }
+
+          [ "$fail" = "0" ] && echo "=== 検証OK ===" || { echo "=== 検証NG ==="; exit 1; }
