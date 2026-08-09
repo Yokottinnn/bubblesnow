@@ -24,7 +24,7 @@ jobs:
     env:
       # ★安全弁★ "true" の間は読み取りと検証だけで、Firebase へは一切書き込まない。
       # 本番実行するときだけ "false" に変更してコミットする。
-      DRY_RUN: "false"
+      DRY_RUN: "true"
       # DB URL は index.html で既に公開されている値。Secret があればそちらを優先する。
       FIREBASE_URL: ${{ secrets.FIREBASE_URL || 'https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app' }}
       # 認証なしで書けている想定。必要になったら Secret を追加する。
