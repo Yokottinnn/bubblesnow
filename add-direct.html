@@ -1,0 +1,72 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BubblesNow</title>
+<style>body{background:#0f0c29;color:#fff;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:20px}.w{max-width:340px}.s{width:22px;height:22px;border:2px solid rgba(255,255,255,.15);border-top-color:#845EF7;border-radius:50%;animation:s .5s linear infinite;margin:0 auto 10px}@keyframes s{to{transform:rotate(360deg)}}.ok{font-size:48px;margin-bottom:10px}.nm{font-size:16px;font-weight:700;margin-bottom:6px}.t{font-size:11px;color:rgba(255,255,255,.4);line-height:1.8}.tag{display:inline-block;padding:2px 8px;border-radius:8px;margin:2px;font-size:10px}.c1{background:rgba(132,94,247,.15);color:#b794f6}.c2{background:rgba(255,212,59,.15);color:#ffd43b}.c3{background:rgba(255,169,77,.15);color:#ffa94d}</style>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+</head>
+<body><div class="w" id="m"><div class="s"></div><div style="font-size:14px">タスク追加中...</div></div>
+<script>
+"use strict";
+/* add.html の Make.com webhook 依存をなくし、Firebase に直接書き込む版。
+   クエリの受け口は add.html と同一なので、iOSショートカット等は URL を
+   add.html → add-direct.html に差し替えるだけで移行できる。
+   recs.html と同様 databaseURL のみで初期化する（APIキーを置かない）。 */
+firebase.initializeApp({databaseURL:"https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app"});
+var db=firebase.database();
+
+var p=Object.fromEntries(new URLSearchParams(location.search));
+var fields=["name","category","priority","icon","deadline","detail","merit","demerit","url","note","location","status"];
+var data={};
+fields.forEach(function(f){data[f]=p[f]||"";});
+if(!data.status)data.status="active";
+if(!data.category)data.category="その他";
+if(!data.priority)data.priority="🟡中";
+
+var el=document.getElementById("m");
+
+if(!data.name){
+  el.innerHTML="⚠️ タスク名がありません";
+}else{
+  var task={
+    id:"t"+Date.now(),
+    name:data.name,
+    category:data.category,
+    detail:data.detail,
+    merit:data.merit,
+    demerit:data.demerit,
+    deadline:data.deadline,
+    priority:data.priority,
+    status:data.status,
+    url:data.url,
+    note:data.note,
+    icon:data.icon,
+    location:data.location,
+    wip:false,
+    createdAt:new Date().toISOString()
+  };
+
+  /* ★ transaction を使う理由 ★
+     アプリ本体は tasks 配列を丸ごと .set() で上書きする。単純な get→set だと
+     同時操作で片方の更新が消える（ロストアップデート）。transaction なら
+     サーバ側の最新値を元に再試行されるので、取りこぼしが起きない。 */
+  db.ref("users/yokota/tasks").transaction(function(current){
+    var arr=Array.isArray(current)?current.slice():(current?Object.values(current):[]);
+    arr.push(task);
+    return arr;
+  },function(err,committed){
+    if(err||!committed){
+      el.innerHTML="❌ エラー — リロードしてください"+(err?"<div class='t'>"+err.message+"</div>":"");
+      return;
+    }
+    el.innerHTML=
+      '<div class="ok">✅</div>'+
+      '<div class="nm">'+(task.icon?task.icon+' ':'')+task.name+'</div>'+
+      '<div class="t">'+
+      (task.category?'<span class="tag c1">'+task.category+'</span>':'')+
+      (task.priority?'<span class="tag c2">'+task.priority+'</span>':'')+
+      (task.deadline?'<span class="tag c3">'+task.deadline+'</span>':'')+
+      (task.detail?'<br>'+task.detail:'')+
+      '</div>'+
+      '<div style="margin-top:16px;font-size:12px;color:rgba(255,255,255,.3)">このページを閉じてOKです</div>';
+  });
+}
+</script></body></html>

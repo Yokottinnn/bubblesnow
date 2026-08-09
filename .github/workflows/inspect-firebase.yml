@@ -1,0 +1,32 @@
+name: Inspect Firebase Structure
+
+# 読み取り専用。Firebase のデータ「構造」だけを確認する。
+# クラウドの Claude Code からは Firebase に到達できないため、ここを目として使う。
+#
+# ★このリポジトリは public ＝ Actions のログも公開される★
+# スクリプト側でタスク名・詳細などの中身は一切出力しないようにしてある。
+# artifact も作らない（バックアップ目的ではないため）。
+
+on:
+  push:
+    branches:
+      - claude/work-start-r5b5q3
+    paths:
+      - 'scripts/inspect-tasks.mjs'
+      - '.github/workflows/inspect-firebase.yml'
+  workflow_dispatch:
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      FIREBASE_URL: ${{ secrets.FIREBASE_URL || 'https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app' }}
+      FIREBASE_SECRET: ${{ secrets.FIREBASE_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Inspect structure (read-only)
+        run: node scripts/inspect-tasks.mjs
