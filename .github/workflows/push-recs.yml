@@ -1,0 +1,52 @@
+name: Push Recs to Firebase
+
+# このワークフローは「クラウドのClaude CodeからFirebaseへ書き込む」ための踏み台。
+# Claude Code のクラウドセッションは egress ポリシーで Firebase に到達できないが、
+# GitHub Actions のランナーからは到達できるため、ここを経由して書き込む。
+#
+# workflow_dispatch はワークフローが default branch に存在しないと使えないので、
+# 当面は作業ブランチへの push（対象ファイル変更時のみ）で発火させる。
+# main にマージした後は手動実行も使えるようになる。
+
+on:
+  push:
+    branches:
+      - claude/work-start-r5b5q3
+    paths:
+      - 'data/poikatsu-recs.json'
+      - 'scripts/push-recs.mjs'
+      - '.github/workflows/push-recs.yml'
+  workflow_dispatch:
+
+jobs:
+  push-recs:
+    runs-on: ubuntu-latest
+    env:
+      # ★安全弁★ "true" の間は読み取りと検証だけで、Firebase へは一切書き込まない。
+      # 本番実行するときだけ "false" に変更してコミットする。
+      DRY_RUN: "true"
+      # DB URL は index.html で既に公開されている値。Secret があればそちらを優先する。
+      FIREBASE_URL: ${{ secrets.FIREBASE_URL || 'https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app' }}
+      # 認証なしで書けている想定。必要になったら Secret を追加する。
+      FIREBASE_SECRET: ${{ secrets.FIREBASE_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Merge researched recs into Firebase
+        run: node scripts/push-recs.mjs
+
+      - name: Upload backup and preview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recs-backup-${{ github.run_number }}
+          path: |
+            recs-backup.json
+            recs-merged-preview.json
+          if-no-files-found: warn
+          retention-days: 30

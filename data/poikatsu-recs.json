@@ -1,0 +1,102 @@
+{
+  "researchedAt": "2026-08-09",
+  "note": "ポイ活リサーチ結果。urlCandidates は上から順に HTTP 実チェックし、最初に到達できたものを url に採用する。全滅した場合 url は空文字（設計書ルール: 壊れたリンクは無リンクより悪い）。",
+  "recs": [
+    {
+      "title": "Paidy×povo中古スマホ20%還元",
+      "desc": "povo認定中古スマホをペイディ払いで購入すると購入額の20%キャッシュバック（最大2万円）。8/31まで",
+      "category": "お金",
+      "source": "news",
+      "icon": "💳",
+      "priority": "🟡中",
+      "deadline": "2026-08-31",
+      "location": "",
+      "urlCandidates": [
+        "https://paidy.com/campaign/202608_povo-smartphone_campaign/",
+        "https://paidy.com/campaign/"
+      ]
+    },
+    {
+      "title": "楽天ペイ 5と0のつく日エントリー",
+      "desc": "要エントリー。対象日に100円以上のコード/QR払いで抽選100名に全額ポイント還元。次回対象日は8/10。10/1まで",
+      "category": "お金",
+      "source": "news",
+      "icon": "💰",
+      "priority": "🟡中",
+      "deadline": "2026-10-01",
+      "location": "",
+      "urlCandidates": [
+        "https://pay.rakuten.co.jp/campaign/pay-5and0day/"
+      ]
+    },
+    {
+      "title": "楽天ペイ チャージの日エントリー",
+      "desc": "5と0のつく日にチャージすると抽選50名に全額分ポイント進呈。要エントリー。9/1まで",
+      "category": "お金",
+      "source": "news",
+      "icon": "💴",
+      "priority": "🟢低",
+      "deadline": "2026-09-01",
+      "location": "",
+      "urlCandidates": [
+        "https://pay.rakuten.co.jp/campaign/charge-5-0/"
+      ]
+    },
+    {
+      "title": "楽天ペイ 毎日スクラッチ全額還元",
+      "desc": "エントリー不要。支払い後のスクラッチで1等は全額ポイント還元、2等5%還元。常時開催",
+      "category": "お金",
+      "source": "news",
+      "icon": "🎯",
+      "priority": "🟢低",
+      "deadline": "",
+      "location": "",
+      "urlCandidates": [
+        "https://pay.rakuten.co.jp/campaign/pay-scratch/"
+      ]
+    },
+    {
+      "title": "PayPay自治体キャンペーン最大30%還元",
+      "desc": "あなたのまちを応援プロジェクト。8月分は千葉県が最大10%(8/30まで)、岐阜市20%(8/31まで)、岩手県20%(8/17-9/18)",
+      "category": "お金",
+      "source": "news",
+      "icon": "🏙️",
+      "priority": "🟡中",
+      "deadline": "2026-08-30",
+      "location": "",
+      "urlCandidates": [
+        "https://paypay.ne.jp/event/support-local/",
+        "https://paypay.ne.jp/event/",
+        "https://campaign.paypay.ne.jp/"
+      ]
+    },
+    {
+      "title": "Coincheck友だち紹介2,500円分BTC",
+      "desc": "紹介した側・された側の双方に2,500円相当のビットコインを付与。条件達成で確実にもらえるクリプト案件",
+      "category": "お金",
+      "source": "news",
+      "icon": "🪙",
+      "priority": "🟢低",
+      "deadline": "",
+      "location": "",
+      "urlCandidates": [
+        "https://coincheck.com/ja/campaigns",
+        "https://coincheck.com/ja/"
+      ]
+    },
+    {
+      "title": "GMOコイン 毎日抽選キャンペーン",
+      "desc": "暗号資産FXで毎日1名に現金1万円、暗号資産の購入で毎日抽選1,000円。常時開催",
+      "category": "お金",
+      "source": "news",
+      "icon": "📈",
+      "priority": "🟢低",
+      "deadline": "",
+      "location": "",
+      "urlCandidates": [
+        "https://coin.z.com/jp/campaign/",
+        "https://coin.z.com/jp/"
+      ]
+    }
+  ]
+}
