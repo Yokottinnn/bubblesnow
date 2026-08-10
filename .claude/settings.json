@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -nc --arg t \"【最優先ルール・例外なし】ユーザーに選択肢を提示するとき、または選択を求めるときは、必ず AskUserQuestion ツール（ダイアログ）を使うこと。地の文・箇条書き・表で選択肢を並べて選ばせるのは禁止。返答を送る前に「これはユーザーに選ばせているか？」を自問し、YESならAskUserQuestionを呼ぶ。例外は一切ない。詳細は CLAUDE.md 冒頭を参照。\" \"{hookSpecificOutput:{hookEventName:\\\"UserPromptSubmit\\\",additionalContext:\\$t}}\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
