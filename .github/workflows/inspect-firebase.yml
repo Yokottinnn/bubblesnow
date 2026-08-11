@@ -25,3 +25,6 @@ jobs:
           node-version: '20'
       - name: Inspect structure (read-only)
         run: node scripts/inspect-tasks.mjs
+
+      - name: Diagnose recs (read-only)
+        run: node scripts/diagnose-recs.mjs
