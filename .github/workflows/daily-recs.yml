@@ -1,0 +1,62 @@
+name: Daily Recommendations
+
+# Phase 3: Make.com の日次バッチ（0:00 JST）の代替。
+#
+# ★現在は自動実行を止めてある★
+# schedule はコメントアウトしたまま。まず workflow_dispatch を DRY_RUN=true で
+# 何度か回し、生成品質を目視で確かめてから有効化する（設計書 Phase 5 の並行検証）。
+# Make.com を止めるのは、それが済んでからでよい（Phase 6・要承認）。
+
+on:
+  # schedule:
+  #   # 0:00 JST = 15:00 UTC（前日）。GitHub Actions の cron は UTC 基準。
+  #   # 混雑時は数分〜十数分遅れることがある。
+  #   - cron: '0 15 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '書き込むかどうか（true=生成して見せるだけ / false=Firebaseに書き込む）'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+        default: 'true'
+        required: true
+      model:
+        description: '使用モデル（空なら実物と同じ claude-sonnet-4-20250514）'
+        type: string
+        default: ''
+        required: false
+
+jobs:
+  generate-recs:
+    runs-on: ubuntu-latest
+    env:
+      # 既定は必ず dry run。schedule で動かす時も明示しない限り書き込まない設計にはせず、
+      # 有効化の際は下の行を 'false' に変えること。
+      DRY_RUN: ${{ inputs.dry_run || 'true' }}
+      CLAUDE_MODEL: ${{ inputs.model }}
+      FIREBASE_URL: ${{ secrets.FIREBASE_URL || 'https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app' }}
+      FIREBASE_SECRET: ${{ secrets.FIREBASE_SECRET }}
+      CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate recommendations
+        run: node scripts/generate-recs.mjs
+
+      - name: Upload backup and preview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-recs-${{ github.run_number }}
+          path: |
+            recs-backup.json
+            recs-generated-preview.json
+          if-no-files-found: warn
+          retention-days: 30
