@@ -155,6 +155,23 @@ def _():
     return [user("状況は"), assistant(text("有効化のご判断が必要になったタイミングでお伺いします。"))]
 
 
+@case("回帰: 検知語を避けた言い換え（〜まで進みません）も差し戻す", BLOCK)
+def _():
+    body = ("画像の Slack 添付は home-mac の OpenClaw が動くまで進みません。\n"
+            "復旧の連絡をもらえた時点で、添付依頼から再開します。")
+    return [user("状況は"), assistant(text(body))]
+
+
+@case("回帰: 外部イベント待ちの表明も差し戻す", BLOCK)
+def _():
+    return [user("done"), assistant(text("マージまで完了しました。CI の結果待ちです。"))]
+
+
+@case("回帰: 利用者への連絡依頼で終わるのも差し戻す", BLOCK)
+def _():
+    return [user("done"), assistant(text("反映しました。復旧したら教えてください。"))]
+
+
 @case("判断を求めない完了報告は通す", PASS)
 def _():
     return [user("やって"), assistant(text("main にマージしました。CI は success、テストは 36/36 通過しています。"))]
