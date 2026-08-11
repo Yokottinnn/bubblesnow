@@ -76,9 +76,20 @@
 
 ### このリポジトリ固有の注意
 
-**`DRY_RUN=true` は無料ではない。** `scripts/generate-recs.mjs` は
-`if (DRY_RUN)` の判定より**前**に Anthropic API を呼ぶ。DRY RUN がスキップするのは
-Firebase への書き込みだけで、**API 課金は発生する**。
+**`scripts/generate-recs.mjs` は `MODE` で挙動が変わる。無料なのは `validate` だけ。**
+
+| MODE | API呼び出し | Firebase書き込み | 費用 |
+|------|:---:|:---:|------|
+| `validate`（既定） | しない | しない | **$0** |
+| `dry-run` | する | しない | $0.4〜1.0 |
+| `live` | する | する | $0.4〜1.0 |
+
+`validate` は Firebase読み取り・プロンプト組み立て・見本レスポンス
+（`data/sample-claude-response.json`）を使った抽出/正規化/ID採番までを検証する。
+配線を確かめるだけならこれで足り、APIキーも不要。
+
+かつての `DRY_RUN=true` は「安全」と誤解されたが、API課金は発生していた
+（判定より前に API を呼んでいた）。名前ごと廃止済み。`dry-run` が省くのは書き込みだけ。
 
 - 1回あたりの目安: **$0.4〜$1.0**（Sonnet 4 + `web_search` を最大8回使用）
 - 内訳: web検索 8回で $0.08、入力は検索結果の積み上がりで 10万〜30万トークン規模

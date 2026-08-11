@@ -4,26 +4,45 @@
 // recs.html が Firebase に .set()」という経路だった。ここでは中継を省き、
 // 生成したJSONをこのスクリプトが直接 Firebase に書き込む。
 //
-// 実行: node scripts/generate-recs.mjs
-//   DRY_RUN=true （既定）… 生成して結果を表示するだけ。書き込まない
-//   DRY_RUN=false        … Firebase に書き込む
+// ★MODE で挙動が変わる。「dry run＝無料」ではない点に注意★
+//   MODE=validate （既定）… **API を一切呼ばない。課金 $0。**
+//                           Firebase読み取り・プロンプト組み立て・見本レスポンスを使った
+//                           抽出/正規化/ID採番までを検証する。配線の確認用。
+//   MODE=dry-run          … 実際に API を呼ぶ（**$0.4〜1.0 の課金あり**）。
+//                           生成結果を表示するが Firebase には書き込まない。
+//   MODE=live             … API を呼び、Firebase にも書き込む。
+//
+// かつて DRY_RUN=true を「安全」と説明していたが誤りだった。DRY_RUN が省くのは
+// 書き込みだけで API 課金は発生していた。名前ごと変えて誤解を断つ。
+//
+// 実行: MODE=validate node scripts/generate-recs.mjs
 
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
 const FIREBASE_URL = (process.env.FIREBASE_URL || '').replace(/\/$/, '');
 const FIREBASE_SECRET = process.env.FIREBASE_SECRET || '';
 const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
-const DRY_RUN = String(process.env.DRY_RUN ?? 'true').toLowerCase() !== 'false';
 const BASE = 'users/yokota';
+
+const MODES = ['validate', 'dry-run', 'live'];
+const MODE = String(process.env.MODE || 'validate').toLowerCase();
+if (!MODES.includes(MODE)) {
+  console.error(`MODE が不正です: "${MODE}"（使えるのは ${MODES.join(' / ')}）`);
+  process.exit(1);
+}
+const CALLS_API = MODE !== 'validate';
+const WRITES = MODE === 'live';
 
 // 実物に合わせる（設計書v2 「日次バッチの正確な仕様」より）
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
 const MAX_TOKENS = 4000;
 
 if (!FIREBASE_URL) { console.error('FIREBASE_URL が未設定です'); process.exit(1); }
-if (!CLAUDE_API_KEY) {
+// APIキーは実際に呼ぶモードでだけ必須。validate は鍵なしで通す。
+if (CALLS_API && !CLAUDE_API_KEY) {
   console.error('CLAUDE_API_KEY が未設定です。');
   console.error('GitHub の Settings → Secrets and variables → Actions で CLAUDE_API_KEY を登録してください。');
+  console.error('（鍵なしで配線だけ確かめたいなら MODE=validate を使ってください。課金は発生しません）');
   process.exit(1);
 }
 
@@ -53,10 +72,15 @@ function clip(value, max) {
   return encodeURIComponent(JSON.stringify(value ?? [])).slice(0, max);
 }
 
-async function generateRecs(tasks, dismissed, existingRecs) {
-  const userMessage = `TASKS=${clip(tasks, 8000)}&DISMISSED=${clip(dismissed, 2000)}&RECS=${clip(existingRecs, 8000)}
+// 組み立てだけを切り出す。validate から API を呼ばずに中身を確かめられるようにするため。
+function buildUserMessage(tasks, dismissed, existingRecs) {
+  return `TASKS=${clip(tasks, 8000)}&DISMISSED=${clip(dismissed, 2000)}&RECS=${clip(existingRecs, 8000)}
 
 上記データを分析しておすすめJSON配列を返せ。Web検索で東京のサウナ新店・テックイベント・アート展・ポイ活キャンペーン・クリプトエアドロップ/NFTインセンティブの最新情報を調べろ。X(Twitter)の投稿で有益な情報があればそのURLを優先的に使え。JSON配列のみ。HTMLタグやciteタグは絶対に含めるな。`;
+}
+
+async function generateRecs(tasks, dismissed, existingRecs) {
+  const userMessage = buildUserMessage(tasks, dismissed, existingRecs);
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -123,9 +147,16 @@ function assignIds(recs, existing) {
   return recs.map((r) => ({ id: `r${next++}`, ...r }));
 }
 
+const MODE_LABEL = {
+  validate: '🔍 VALIDATE（APIを呼ばない・課金 $0）',
+  'dry-run': '🧪 DRY RUN（API課金あり・Firebaseには書かない）',
+  live: '🚀 LIVE（API課金あり・Firebaseに書き込む）',
+};
+
 async function main() {
   console.log('=== BubblesNow 日次recs生成 ===');
-  console.log(`モード: ${DRY_RUN ? '🧪 DRY RUN（書き込みなし）' : '🚀 本番書き込み'} / モデル: ${MODEL}`);
+  console.log(`モード: ${MODE_LABEL[MODE]}`);
+  if (CALLS_API) console.log(`モデル: ${MODEL}`);
 
   const tasks = await fbGet(`${BASE}/tasks`).catch(() => null);
   const dismissed = (await fbGet(`${BASE}/dismissed`).catch(() => [])) || [];
@@ -139,9 +170,24 @@ async function main() {
   await writeFile('recs-backup.json', JSON.stringify(existingRaw, null, 2));
   console.log('📦 既存recsを recs-backup.json に保存');
 
-  const response = await generateRecs(tasks, dismissed, existing);
-  if (response.usage) {
-    console.log(`トークン: in ${response.usage.input_tokens} / out ${response.usage.output_tokens}`);
+  let response;
+  if (CALLS_API) {
+    response = await generateRecs(tasks, dismissed, existing);
+    if (response.usage) {
+      console.log(`トークン: in ${response.usage.input_tokens} / out ${response.usage.output_tokens}`);
+    }
+  } else {
+    // ★API を呼ばない。組み立て内容を見せ、抽出以降は見本レスポンスで検証する★
+    const userMessage = buildUserMessage(tasks, dismissed, existing);
+    console.log('\n-- 送信されるはずだった内容（実際には送っていない）--');
+    console.log(`  system: ${SYSTEM_PROMPT.length}文字`);
+    console.log(`  user  : ${userMessage.length}文字`);
+    console.log(`  上限適用: TASKS ${clip(tasks, 8000).length}/8000, DISMISSED ${clip(dismissed, 2000).length}/2000, RECS ${clip(existing, 8000).length}/8000`);
+    console.log(`  tools : web_search_20250305 (max_uses 8) / max_tokens ${MAX_TOKENS}`);
+
+    response = JSON.parse(await readFile('data/sample-claude-response.json', 'utf8'));
+    console.log('\n-- 見本レスポンスで抽出・正規化を検証 --');
+    console.log(`  content ブロック: ${response.content.map((b) => b.type).join(', ')}`);
   }
 
   const generated = extractRecs(response).map(sanitize).filter((r) => r.title);
@@ -154,8 +200,15 @@ async function main() {
 
   if (!withIds.length) throw new Error('生成結果が0件。書き込みを中止します。');
 
-  if (DRY_RUN) {
-    console.log('\n🧪 DRY RUN のため書き込みませんでした。');
+  if (MODE === 'validate') {
+    console.log('\n🔍 配線は正常。API は呼んでいないので課金は発生していません（$0）。');
+    console.log('   上の結果は見本レスポンス由来のダミーです。実データではありません。');
+    console.log('   実際に生成させるには MODE=dry-run（$0.4〜1.0 の課金あり）。');
+    return;
+  }
+
+  if (!WRITES) {
+    console.log('\n🧪 DRY RUN のため書き込みませんでした（API課金は発生済み）。');
     return;
   }
 

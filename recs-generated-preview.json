@@ -1,0 +1,38 @@
+[
+  {
+    "id": "r1",
+    "title": "サンプル サウナ新店",
+    "desc": "パーサ検証用のダミー。実データではない",
+    "category": "おでかけ",
+    "source": "news",
+    "icon": "♨️",
+    "priority": "🟢低",
+    "deadline": "2026-12-31",
+    "url": "https://example.com/sauna",
+    "location": "東京"
+  },
+  {
+    "id": "r2",
+    "title": "サンプル ポイ活キャンペーン",
+    "desc": "category/priority/url の正規化を試すためのダミー",
+    "category": "その他",
+    "source": "news",
+    "icon": "💰",
+    "priority": "🟡中",
+    "deadline": "",
+    "url": "",
+    "location": ""
+  },
+  {
+    "id": "r3",
+    "title": "タグ入りタイトル",
+    "desc": "HTMLタグ除去の確認 連続空白も潰れるか",
+    "category": "お金",
+    "source": "x",
+    "icon": "🧪",
+    "priority": "🟡中",
+    "deadline": "",
+    "url": "https://example.com/campaign",
+    "location": ""
+  }
+]

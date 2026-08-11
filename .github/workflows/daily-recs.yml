@@ -14,15 +14,15 @@ on:
   #   - cron: '0 15 * * *'
   workflow_dispatch:
     inputs:
-      dry_run:
-        # ⚠️ true でも Anthropic API は呼ばれ課金される（generate-recs.mjs は
-        # DRY_RUN 判定より前に API を叩く）。スキップされるのは書き込みだけ。
-        description: '⚠️true でもAPI課金あり（$0.4〜1.0/回）。true=生成のみ / false=Firebaseにも書き込む'
+      mode:
+        # validate だけが無料。以前の dry_run は「true でも課金される」誤解を招いたので廃止した。
+        description: 'validate=API呼ばず配線検証($0) / dry-run=生成のみ($0.4〜1.0) / live=生成してFirebaseに書込($0.4〜1.0)'
         type: choice
         options:
-          - 'true'
-          - 'false'
-        default: 'true'
+          - 'validate'
+          - 'dry-run'
+          - 'live'
+        default: 'validate'
         required: true
       model:
         description: '使用モデル（空なら実物と同じ claude-sonnet-4-20250514）'
@@ -34,9 +34,9 @@ jobs:
   generate-recs:
     runs-on: ubuntu-latest
     env:
-      # 既定は必ず dry run。schedule で動かす時も明示しない限り書き込まない設計にはせず、
-      # 有効化の際は下の行を 'false' に変えること。
-      DRY_RUN: ${{ inputs.dry_run || 'true' }}
+      # 既定は validate（APIを呼ばない＝課金なし）。schedule を有効化するときは、
+      # 費用の見積もりを提示して承認を得たうえで 'live' に変えること。
+      MODE: ${{ inputs.mode || 'validate' }}
       CLAUDE_MODEL: ${{ inputs.model }}
       FIREBASE_URL: ${{ secrets.FIREBASE_URL || 'https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app' }}
       FIREBASE_SECRET: ${{ secrets.FIREBASE_SECRET }}
