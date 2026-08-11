@@ -15,7 +15,9 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: '書き込むかどうか（true=生成して見せるだけ / false=Firebaseに書き込む）'
+        # ⚠️ true でも Anthropic API は呼ばれ課金される（generate-recs.mjs は
+        # DRY_RUN 判定より前に API を叩く）。スキップされるのは書き込みだけ。
+        description: '⚠️true でもAPI課金あり（$0.4〜1.0/回）。true=生成のみ / false=Firebaseにも書き込む'
         type: choice
         options:
           - 'true'
