@@ -112,20 +112,35 @@ function orderTasks(tasks) {
 
 // 組み立てだけを切り出す。validate から API を呼ばずに中身を確かめられるようにするため。
 // 何件詰められたかを呼び出し側が報告できるよう stats も返す。
+// ★枠は固定せず、合計を共有して融通する★
+// 固定枠（TASKS 8000 / DISMISSED 2000 / RECS 8000）だと実データで偏りが出ていた:
+//   RECS      471/8000 …… 7500文字あまる（recsは数が少ないので枠を使い切らない）
+//   DISMISSED 1983/2000 …… 上限に張り付き 92/244件しか送れない
+// 合計は Make.com 時代と同じ 18000 のままにして、余った分を必要な側へ回す。
+const TOTAL_BUDGET = 18000;
+// 先に詰める側が食い尽くさないよう、後続の最低枠を残しておく。
+const FLOOR = { dismissed: 2000, tasks: 6000 };
+
 function buildUserMessage(tasks, dismissedTitles, existingRecs) {
-  const t = pack(orderTasks(tasks), 8000);
+  let left = TOTAL_BUDGET;
+
+  // 既出recsは重複回避が目的なのでタイトルとカテゴリで足りる。件数が少なく
+  // 必ず入れたいので最初に確保する。
+  const recs = (Array.isArray(existingRecs) ? existingRecs : []).filter(Boolean)
+    .map((r) => ({ title: r.title, category: r.category }));
+  const r = pack(recs, left - FLOOR.dismissed - FLOOR.tasks);
+  left -= r.json.length;
 
   // ★DISMISSED には ID ではなくタイトルを送る★
   // 元は dismissed（"r12" のようなID配列）を送っていたが、IDだけ渡されても
   // 何を却下したのか判断できず「既出を再提示するな」の指示が機能しない。
   // 新しい却下ほど今の好みを表すので、後ろ（新しい方）から詰める。
   const titles = (Array.isArray(dismissedTitles) ? dismissedTitles : []).filter(Boolean).slice().reverse();
-  const d = pack(titles, 2000);
+  const d = pack(titles, left - FLOOR.tasks);
+  left -= d.json.length;
 
-  // 既出recsは重複回避が目的なのでタイトルとカテゴリで足りる。
-  const recs = (Array.isArray(existingRecs) ? existingRecs : []).filter(Boolean)
-    .map((r) => ({ title: r.title, category: r.category }));
-  const r = pack(recs, 8000);
+  // 残り全部をタスクに回す。
+  const t = pack(orderTasks(tasks), left);
 
   const message = `TASKS=${t.json}&DISMISSED=${d.json}&RECS=${r.json}
 
