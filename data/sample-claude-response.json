@@ -3,7 +3,7 @@
   "id": "msg_sample",
   "type": "message",
   "role": "assistant",
-  "model": "claude-sonnet-4-20250514",
+  "model": "claude-opus-5",
   "stop_reason": "end_turn",
   "usage": { "input_tokens": 0, "output_tokens": 0 },
   "content": [

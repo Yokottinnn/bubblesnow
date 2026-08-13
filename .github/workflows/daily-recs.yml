@@ -16,7 +16,7 @@ on:
     inputs:
       mode:
         # validate だけが無料。以前の dry_run は「true でも課金される」誤解を招いたので廃止した。
-        description: 'validate=API呼ばず配線検証($0) / dry-run=生成のみ($0.4〜1.0) / live=生成してFirebaseに書込($0.4〜1.0)'
+        description: 'validate=API呼ばず配線検証($0) / dry-run=生成のみ($0.8〜1.8) / live=生成してFirebaseに書込($0.8〜1.8)'
         type: choice
         options:
           - 'validate'
@@ -25,7 +25,9 @@ on:
         default: 'validate'
         required: true
       model:
-        description: '使用モデル（空なら実物と同じ claude-sonnet-4-20250514）'
+        # 設計書v2 の claude-sonnet-4-20250514 は既に存在せず404になる。
+        # 安いモデルで試したいときは claude-sonnet-5 を指定する（入出力とも opus-5 の約6割）。
+        description: '使用モデル（空なら claude-opus-5。安く試すなら claude-sonnet-5）'
         type: string
         default: ''
         required: false

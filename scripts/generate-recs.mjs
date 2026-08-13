@@ -8,7 +8,7 @@
 //   MODE=validate （既定）… **API を一切呼ばない。課金 $0。**
 //                           Firebase読み取り・プロンプト組み立て・見本レスポンスを使った
 //                           抽出/正規化/ID採番までを検証する。配線の確認用。
-//   MODE=dry-run          … 実際に API を呼ぶ（**$0.4〜1.0 の課金あり**）。
+//   MODE=dry-run          … 実際に API を呼ぶ（**$0.8〜1.8 の課金あり**）。
 //                           生成結果を表示するが Firebase には書き込まない。
 //   MODE=live             … API を呼び、Firebase にも書き込む。
 //
@@ -33,9 +33,26 @@ if (!MODES.includes(MODE)) {
 const CALLS_API = MODE !== 'validate';
 const WRITES = MODE === 'live';
 
-// 実物に合わせる（設計書v2 「日次バッチの正確な仕様」より）
-const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
-const MAX_TOKENS = 4000;
+// ★設計書v2 の claude-sonnet-4-20250514 は既に存在しない★
+// 2026-08-13 の dry-run が 404 not_found_error で落ちた（課金は発生していない）。
+// 日付サフィックス付きのIDは廃止され、現行は claude-opus-5 / claude-sonnet-5 のように
+// サフィックス無しのIDそのものが正式名称。CLAUDE_MODEL で上書きできる。
+const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-5';
+
+// web_search はモデル世代ごとにツールのバージョンが違う。20260209 は dynamic filtering
+// （検索結果をコンテキストに入れる前にモデル側で絞り込む）に対応していて、Opus 5 / Sonnet 5 /
+// Opus 4.6以降 / Sonnet 4.6 で使える。code_execution を別途宣言する必要はない。
+// 旧世代モデルを CLAUDE_MODEL で指定したときのために 20250305 へ落とせるようにしてある。
+const WEB_SEARCH_TOOL = process.env.WEB_SEARCH_TOOL || 'web_search_20260209';
+
+// 実物は 4000 だったが、15〜25件の日本語JSONだと出力途中で打ち切られる危険がある。
+// 途中で切れると配列が壊れて丸ごと無駄になる（＝課金だけ発生する）ので上限を上げた。
+// 出力トークンは実際に生成した分しか課金されないため、上限を上げること自体の費用はゼロ。
+const MAX_TOKENS = 8000;
+
+// server tool が長引くと stop_reason: 'pause_turn' で一旦返ってくる。
+// そのまま扱うと途中で切れた応答をJSONとして読もうとして失敗するので、続きを要求する。
+const MAX_CONTINUATIONS = 5;
 
 if (!FIREBASE_URL) { console.error('FIREBASE_URL が未設定です'); process.exit(1); }
 // APIキーは実際に呼ぶモードでだけ必須。validate は鍵なしで通す。
@@ -149,9 +166,7 @@ function buildUserMessage(tasks, dismissedTitles, existingRecs) {
   return { message, stats: { tasks: t, dismissed: d, recs: r } };
 }
 
-async function generateRecs(tasks, dismissedTitles, existingRecs) {
-  const { message: userMessage } = buildUserMessage(tasks, dismissedTitles, existingRecs);
-
+async function callClaude(messages) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -163,12 +178,36 @@ async function generateRecs(tasks, dismissedTitles, existingRecs) {
       model: MODEL,
       max_tokens: MAX_TOKENS,
       system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userMessage }],
-      tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 8 }],
+      messages,
+      tools: [{ type: WEB_SEARCH_TOOL, name: 'web_search', max_uses: 8 }],
     }),
   });
   if (!res.ok) throw new Error(`Claude API failed: ${res.status} ${await res.text()}`);
   return res.json();
+}
+
+async function generateRecs(tasks, dismissedTitles, existingRecs) {
+  const { message: userMessage } = buildUserMessage(tasks, dismissedTitles, existingRecs);
+
+  const messages = [{ role: 'user', content: userMessage }];
+  let response = await callClaude(messages);
+
+  // pause_turn は「まだ途中」の合図。assistant の途中経過をそのまま積んで再送すると
+  // サーバ側が続きから再開する。回数を区切らないと無限に課金され続けるので上限を置く。
+  let continuations = 0;
+  while (response.stop_reason === 'pause_turn' && continuations < MAX_CONTINUATIONS) {
+    continuations += 1;
+    console.log(`⏸ pause_turn。続きを要求します（${continuations}/${MAX_CONTINUATIONS}）`);
+    messages.push({ role: 'assistant', content: response.content });
+    response = await callClaude(messages);
+  }
+  if (response.stop_reason === 'pause_turn') {
+    console.warn(`⚠️ pause_turn が ${MAX_CONTINUATIONS} 回続いたので打ち切りました。応答が不完全な可能性があります`);
+  }
+  if (response.stop_reason === 'max_tokens') {
+    console.warn(`⚠️ 出力が max_tokens (${MAX_TOKENS}) に達しました。JSONが途中で切れている可能性があります`);
+  }
+  return response;
 }
 
 // web search 使用時は content に tool_use / tool_result も混ざるので text だけ集める
@@ -253,10 +292,13 @@ async function main() {
     console.log('\n-- 送信されるはずだった内容（実際には送っていない）--');
     console.log(`  system: ${SYSTEM_PROMPT.length}文字`);
     console.log(`  user  : ${message.length}文字`);
-    console.log(`  TASKS    : ${pctOf(stats.tasks)}  ${stats.tasks.json.length}/8000文字`);
-    console.log(`  DISMISSED: ${pctOf(stats.dismissed)}  ${stats.dismissed.json.length}/2000文字`);
-    console.log(`  RECS     : ${pctOf(stats.recs)}  ${stats.recs.json.length}/8000文字`);
-    console.log(`  tools : web_search_20250305 (max_uses 8) / max_tokens ${MAX_TOKENS}`);
+    const used = stats.tasks.json.length + stats.dismissed.json.length + stats.recs.json.length;
+    console.log(`  TASKS    : ${pctOf(stats.tasks)}  ${stats.tasks.json.length}文字`);
+    console.log(`  DISMISSED: ${pctOf(stats.dismissed)}  ${stats.dismissed.json.length}文字`);
+    console.log(`  RECS     : ${pctOf(stats.recs)}  ${stats.recs.json.length}文字`);
+    console.log(`  合計 ${used}/${TOTAL_BUDGET}文字（3セクションで共有）`);
+    console.log(`  model : ${MODEL}（実際には呼ばない）`);
+    console.log(`  tools : ${WEB_SEARCH_TOOL} (max_uses 8) / max_tokens ${MAX_TOKENS}`);
 
     response = JSON.parse(await readFile('data/sample-claude-response.json', 'utf8'));
     console.log('\n-- 見本レスポンスで抽出・正規化を検証 --');
@@ -276,7 +318,7 @@ async function main() {
   if (MODE === 'validate') {
     console.log('\n🔍 配線は正常。API は呼んでいないので課金は発生していません（$0）。');
     console.log('   上の結果は見本レスポンス由来のダミーです。実データではありません。');
-    console.log('   実際に生成させるには MODE=dry-run（$0.4〜1.0 の課金あり）。');
+    console.log('   実際に生成させるには MODE=dry-run（$0.8〜1.8 の課金あり）。');
     return;
   }
 
