@@ -72,7 +72,7 @@
 フックが黙って壊れると「守られているつもり」になる。**変更したら必ず実行する。**
 
 ```bash
-npm run test:hooks
+python3 .claude/hooks/test-enforce-dialog.py
 ```
 
 21 ケースを検証する。差し戻すべき場面（本文での二択、英語の疑問符、前ターンのダイアログの

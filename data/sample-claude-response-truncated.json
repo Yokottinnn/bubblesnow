@@ -1,0 +1,26 @@
+{
+  "_comment": "max_tokens で出力が途中で切れたときの見本。3件目が文字列の途中で終わっており、閉じ括弧も配列の ] も無い。extractRecs が完成した2件だけを救出できるかを validate で検証する。文字列内に波括弧を混ぜてあるのは、括弧の数え方が in-string 状態を見ているかを確かめるため。API は呼ばないので課金は発生しない。",
+  "id": "msg_sample_truncated",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5",
+  "stop_reason": "max_tokens",
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0
+  },
+  "content": [
+    {
+      "type": "server_tool_use",
+      "id": "srvtoolu_t1",
+      "name": "web_search",
+      "input": {
+        "query": "東京 ポイ活 2026"
+      }
+    },
+    {
+      "type": "text",
+      "text": "承知しました。以下がおすすめです。\n\n```json\n[{\"id\": \"rX1\", \"title\": \"完成している1件目\", \"desc\": \"救出テスト用のダミー\", \"category\": \"おでかけ\", \"source\": \"news\", \"icon\": \"♨️\", \"priority\": \"🟢低\", \"deadline\": \"2026-12-31\", \"url\": \"https://example.com/a\", \"location\": \"東京\"}, {\"id\": \"rX2\", \"title\": \"完成している2件目\", \"desc\": \"閉じ括弧まで揃っている\", \"category\": \"お金\", \"source\": \"x\", \"icon\": \"💰\", \"priority\": \"🟡中\", \"deadline\": \"\", \"url\": \"https://example.com/b\", \"location\": \"\"},{\"id\":\"rX3\",\"title\":\"途中で切れた3件目 {ここは文字列内の波括弧}\",\"desc\":\"ここで max_tokens に達し"
+    }
+  ]
+}

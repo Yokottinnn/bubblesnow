@@ -45,10 +45,16 @@ const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-5';
 // 旧世代モデルを CLAUDE_MODEL で指定したときのために 20250305 へ落とせるようにしてある。
 const WEB_SEARCH_TOOL = process.env.WEB_SEARCH_TOOL || 'web_search_20260209';
 
-// 実物は 4000 だったが、15〜25件の日本語JSONだと出力途中で打ち切られる危険がある。
-// 途中で切れると配列が壊れて丸ごと無駄になる（＝課金だけ発生する）ので上限を上げた。
+// 実物は 4000。8000 に上げてもまだ足りなかった。
+// 2026-08-13 の dry-run は stop_reason: 'max_tokens' で JSON が途中で切れ、
+// $0.39 払って成果ゼロで終わった（in 104003 / out 10037）。
+// 日本語で 15〜25件ぶんの JSON は 8000 トークンに収まらない。
+// Sonnet 5 / Opus 5 は 64K まで出せるので余裕をもって取る。
 // 出力トークンは実際に生成した分しか課金されないため、上限を上げること自体の費用はゼロ。
-const MAX_TOKENS = 8000;
+//
+// なお元の Make.com は 4000 だった。同じプロンプトならもっと強く切られていたはずで、
+// recommendations が 15〜25件でなく9件しかないのはこれが原因かもしれない（未確認）。
+const MAX_TOKENS = 24000;
 
 // server tool が長引くと stop_reason: 'pause_turn' で一旦返ってくる。
 // そのまま扱うと途中で切れた応答をJSONとして読もうとして失敗するので、続きを要求する。
@@ -221,9 +227,60 @@ function extractRecs(response) {
     const direct = JSON.parse(cleaned);
     if (Array.isArray(direct) && direct.length) return direct;
   } catch { /* 下の正規表現で拾う */ }
+
   const m = cleaned.match(/\[[\s\S]*\]/);
-  if (!m) throw new Error('recs配列が抽出できませんでした');
-  return JSON.parse(m[0]);
+  if (m) {
+    try {
+      return JSON.parse(m[0]);
+    } catch { /* 途中で切れている。下で拾えるだけ拾う */ }
+  }
+
+  // ★切れた配列から、完成している要素だけ救う★
+  // max_tokens に達すると配列は "...,{"id":"r14","title":"途中" のような形で終わる。
+  // 丸ごと捨てると、課金だけ発生して成果ゼロになる（2026-08-13 に実際に起きた）。
+  // 閉じ括弧の対応を数えながら、完全な要素の切れ目まで戻して配列を閉じ直す。
+  const salvaged = salvageArray(cleaned);
+  if (salvaged) {
+    console.warn(`⚠️ JSONが途中で切れていたため、完成している ${salvaged.length}件のみ救出しました`);
+    return salvaged;
+  }
+  throw new Error('recs配列が抽出できませんでした');
+}
+
+// 文字列リテラルとエスケープを見ながら走査し、深さ0に戻った要素の末尾を覚えておく。
+// 引用符の中の { } [ ] を数えてしまうと位置がずれるので、in-string 状態を持つ。
+function salvageArray(text) {
+  const start = text.indexOf('[');
+  if (start < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let lastComplete = -1;
+
+  for (let i = start + 1; i < text.length; i += 1) {
+    const c = text[i];
+    if (escaped) { escaped = false; continue; }
+    if (c === '\\') { escaped = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+
+    if (c === '{' || c === '[') depth += 1;
+    else if (c === '}' || c === ']') {
+      depth -= 1;
+      // 深さ0に戻った = 要素ひとつが閉じきった
+      if (depth === 0) lastComplete = i;
+      else if (depth < 0) break; // 配列自体の ] に到達
+    }
+  }
+  if (lastComplete < 0) return null;
+
+  try {
+    const arr = JSON.parse(`${text.slice(start, lastComplete + 1)}]`);
+    return Array.isArray(arr) && arr.length ? arr : null;
+  } catch {
+    return null;
+  }
 }
 
 // アプリ側の想定に合わせて整形する。壊れた値を Firebase に入れない。
@@ -303,6 +360,14 @@ async function main() {
     response = JSON.parse(await readFile('data/sample-claude-response.json', 'utf8'));
     console.log('\n-- 見本レスポンスで抽出・正規化を検証 --');
     console.log(`  content ブロック: ${response.content.map((b) => b.type).join(', ')}`);
+
+    // ★救出処理は高い失敗のときにしか通らない経路なので、ここで無料で確かめておく★
+    const cut = JSON.parse(await readFile('data/sample-claude-response-truncated.json', 'utf8'));
+    const rescued = extractRecs(cut);
+    if (rescued.length !== 2) {
+      throw new Error(`救出処理が壊れています。2件のはずが ${rescued.length}件でした`);
+    }
+    console.log(`  切れたJSONからの救出: ${rescued.length}件 ✔`);
   }
 
   const generated = extractRecs(response).map(sanitize).filter((r) => r.title);
