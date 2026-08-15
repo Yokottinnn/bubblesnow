@@ -124,8 +124,20 @@ Aは1回で終わるが、Bにしておくと今後の同種の管理系操作�
 
 ### 公開URL
 
-有効化後は `https://yokottinnn.github.io/bubblesnow/` で公開される。
-Phase 1 で manifest のパスを相対化済みなので、このサブパス配信で正しく動くはず。
+`https://yokottinnn.github.io/bubblesnow/` で公開中。
+
+**2026-08-14、実機で確認済み（Phase 2 完了）。**
+ログイン → タスク一覧の表示 → ホーム画面への追加まで通った。
+Phase 1 で `index.html` の `href="/manifest.json"` を `./manifest.json` に、
+`manifest.json` の `start_url` を `"./"` に直し `scope` を足した修正が効いている。
+絶対パスのままだと `https://yokottinnn.github.io/manifest.json` を指して 404 になり、
+ホーム画面への追加そのものが出てこない。**この2点はサブパス配信で最初に踏む地雷**なので、
+`index.html` や `manifest.json` を触ったら実機で追加し直して確かめること。
+
+このセッションからは github.io に到達できない（egress で 403）ため、
+**ここだけは利用者の実機でしか確認できない**。デプロイ自体の成否は
+deploy-pages.yml のスモークテスト（配信開始待ち・各ページ200・
+配信バイト列に `"start_url":"\./"` などが含まれるか）で機械的に見ている。
 
 ---
 

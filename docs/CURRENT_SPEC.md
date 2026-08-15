@@ -163,12 +163,14 @@ location : 場所（任意）
 
 ## 4. PWA関連
 
-- **manifest**: `index.html:10` で `<link rel="manifest" href="/manifest.json">`（**絶対パス**）。`manifest.json` は `"start_url":"/"`, `"scope"`なし, アイコンは inline data-URI SVG（🫧・外部ファイル不要）。
+- **manifest**: `index.html:10` で `<link rel="manifest" href="...">`。アイコンは inline data-URI SVG（🫧・外部ファイル不要）。
+  棚卸し時点では絶対パス（`/manifest.json` / `"start_url":"/"` / `scope`なし）だったが、Phase 1 で相対化済み。
 - **メタタグ**: `apple-mobile-web-app-capable`, `mobile-web-app-capable`, `theme-color` 等でPWA/フルスクリーン対応。
 - ⚠️ **サービスワーカーは存在しない**。`sw.js` も `navigator.serviceWorker.register(...)` もコード中に一切ない（grep確認済み）。つまり**オフライン動作・キャッシュ制御はしていない**。設計書 v1/v2 が言及する `sw.js` は実体がないので、移管時に「パス調整」する対象自体が無い。
 - **絶対/相対パスの使われ方**（GitHub Pages `https://<user>.github.io/bubblesnow/` サブパス配信で問題になる箇所）:
-  - 🔴 `index.html:10` `href="/manifest.json"` → サブパスでは `https://<user>.github.io/manifest.json` を指し **404**。`./manifest.json` に要修正。
-  - 🔴 `manifest.json` `"start_url":"/"` → アプリのルート（`/bubblesnow/`）でなくドメイン直下を指す。`"./"` または `"."` に要修正（`scope`も併せて）。
+  - ✅ `index.html:10` `href="/manifest.json"` → サブパスでは `https://<user>.github.io/manifest.json` を指し **404**。`./manifest.json` に修正済み。
+  - ✅ `manifest.json` `"start_url":"/"` → アプリのルート（`/bubblesnow/`）でなくドメイン直下を指す。`"./"` に修正し `scope` も追加済み。
+  - **2026-08-14、実機で確認済み**。ホーム画面への追加まで通った。この2点が直っていないと追加の項目自体が出てこないので、実機で追加できたこと自体が修正の効果の証明になる。
   - 🟢 それ以外（React/Firebase/フォントの`<script>`/`<link>`、manifestアイコン）はすべて絶対CDN or data-URIで、**パス修正不要**。
   - 🟢 CSS/JS/画像の相対参照は無い（全部インライン）ため、アセットのパス崩れは起きない。
   - 補足: 独自ドメインでルート配信にする場合は上記2点は逆に「/」のままで良い。まず .github.io サブパスで動く形（相対）にするのが無難。
@@ -189,7 +191,7 @@ location : 場所（任意）
 
 ### 5-3. 移管で壊れる/引っかかる箇所
 7. 🔴 **add.html が Make.com webhook 依存**（3-1）。Make.com廃止時に外部タスク追加口が死ぬ。Firebase直書き版への置換設計が必要。
-8. 🔴 **manifest 絶対パス2点**（4）。GitHub Pagesサブパスで最初に踏む地雷。
+8. ✅ **manifest 絶対パス2点**（4）。GitHub Pagesサブパスで最初に踏む地雷。Phase 1 で修正し、2026-08-14 に実機で確認済み。
 9. 🟡 **Firebase SDK バージョン不一致**（3-3）。一本化するかは任意。
 
 ### 5-4. デッドコード / 動いていなさそうな箇所
