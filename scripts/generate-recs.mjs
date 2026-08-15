@@ -172,6 +172,12 @@ function buildUserMessage(tasks, dismissedTitles, existingRecs) {
   return { message, stats: { tasks: t, dismissed: d, recs: r } };
 }
 
+// ★必ずストリーミングで受ける★
+// 非ストリーミングだと応答が全部できあがるまでヘッダが1バイトも返らない。
+// Node の fetch（undici）は応答ヘッダを 300 秒しか待たないので、
+// 2026-08-14 の dry-run はちょうど5分で UND_ERR_HEADERS_TIMEOUT で落ちた。
+// max_tokens を 24000 に上げて生成が長くなったぶん、確実に踏むようになっていた。
+// ストリーミングならヘッダは即座に返り、以降はイベントが届き続けるので時間切れしない。
 async function callClaude(messages) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -186,10 +192,99 @@ async function callClaude(messages) {
       system: SYSTEM_PROMPT,
       messages,
       tools: [{ type: WEB_SEARCH_TOOL, name: 'web_search', max_uses: 8 }],
+      stream: true,
     }),
   });
   if (!res.ok) throw new Error(`Claude API failed: ${res.status} ${await res.text()}`);
-  return res.json();
+  return readStream(res.body);
+}
+
+// SSE を読んで、非ストリーミングと同じ形の message オブジェクトに組み直す。
+// 呼び出し側（extractRecs / pause_turn 判定）が形の違いを意識しなくて済むようにする。
+async function readStream(source) {
+  const message = { content: [], stop_reason: null, usage: {} };
+  const pending = new Map(); // index -> { block, jsonBuf }
+  const decoder = new TextDecoder();
+  let buf = '';
+
+  for await (const chunk of source) {
+    buf += decoder.decode(chunk, { stream: true });
+    let nl;
+    // SSE は行単位。data: 以外（event: / id: / 空行）は読み飛ばす。
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (!payload) continue;
+      let ev;
+      try {
+        ev = JSON.parse(payload);
+      } catch {
+        continue; // 壊れた行は捨てる。落とすほどのことではない
+      }
+      applyEvent(ev, message, pending);
+    }
+  }
+
+  // 途中で切れて content_block_stop が来なかったブロックも拾っておく。
+  // ここで捨てると、せっかく届いた本文まで失って救出処理が働かない。
+  for (const [index, slot] of pending) message.content[index] = slot.block;
+  // 添字で入れているので歯抜けになりうる。詰めておく。
+  message.content = message.content.filter(Boolean);
+  return message;
+}
+
+function applyEvent(ev, message, pending) {
+  switch (ev.type) {
+    case 'message_start':
+      Object.assign(message, {
+        id: ev.message?.id,
+        model: ev.message?.model,
+        role: ev.message?.role,
+        usage: { ...(ev.message?.usage || {}) },
+      });
+      break;
+
+    case 'content_block_start':
+      // web_search_tool_result はここで中身ごと届く。text / tool_use は delta で育つ。
+      pending.set(ev.index, { block: { ...ev.content_block }, jsonBuf: '' });
+      break;
+
+    case 'content_block_delta': {
+      const slot = pending.get(ev.index);
+      if (!slot) break;
+      const d = ev.delta || {};
+      if (d.type === 'text_delta') slot.block.text = (slot.block.text || '') + d.text;
+      else if (d.type === 'thinking_delta') slot.block.thinking = (slot.block.thinking || '') + d.thinking;
+      else if (d.type === 'input_json_delta') slot.jsonBuf += d.partial_json || '';
+      break;
+    }
+
+    case 'content_block_stop': {
+      const slot = pending.get(ev.index);
+      if (!slot) break;
+      if (slot.jsonBuf) {
+        try {
+          slot.block.input = JSON.parse(slot.jsonBuf);
+        } catch { /* 検索クエリの復元に失敗しても本題には影響しない */ }
+      }
+      message.content[ev.index] = slot.block;
+      pending.delete(ev.index);
+      break;
+    }
+
+    case 'message_delta':
+      if (ev.delta?.stop_reason) message.stop_reason = ev.delta.stop_reason;
+      if (ev.usage) Object.assign(message.usage, ev.usage);
+      break;
+
+    case 'error':
+      throw new Error(`Claude API stream error: ${JSON.stringify(ev.error)}`);
+
+    default:
+      break; // ping / message_stop など
+  }
 }
 
 async function generateRecs(tasks, dismissedTitles, existingRecs) {
@@ -313,6 +408,30 @@ function assignIds(recs, existing) {
   return recs.map((r) => ({ id: `r${next++}`, ...r }));
 }
 
+// 見本のSSEを、あえて中途半端な位置で切りながら readStream に渡して結果を確かめる。
+// ストリーミングは実際に課金の伴う経路でしか通らないので、無料のうちに壊れを検出する。
+async function checkStreamParser() {
+  const raw = await readFile('data/sample-claude-stream.sse');
+  async function* chopped() {
+    // 素数刻みで切ると、行の途中・イベントの途中・UTF-8の途中に満遍なく当たる。
+    for (let i = 0; i < raw.length; i += 7) yield raw.subarray(i, i + 7);
+  }
+  const msg = await readStream(chopped());
+
+  const types = msg.content.map((b) => b.type).join(', ');
+  const recs = extractRecs(msg);
+  const query = msg.content.find((b) => b.type === 'server_tool_use')?.input?.query;
+
+  if (recs.length !== 2) throw new Error(`SSE組み立てが壊れています。2件のはずが ${recs.length}件`);
+  if (msg.stop_reason !== 'end_turn') throw new Error(`stop_reason が拾えていません: ${msg.stop_reason}`);
+  if (msg.usage.input_tokens !== 1234 || msg.usage.output_tokens !== 987) {
+    throw new Error(`usage が拾えていません: ${JSON.stringify(msg.usage)}`);
+  }
+  if (query !== '東京 サウナ 2026') throw new Error(`分割された tool 入力を復元できていません: ${query}`);
+
+  console.log(`  SSE組み立て: ${recs.length}件 / ブロック ${types} / usage in ${msg.usage.input_tokens} out ${msg.usage.output_tokens} ✔`);
+}
+
 const MODE_LABEL = {
   validate: '🔍 VALIDATE（APIを呼ばない・課金 $0）',
   'dry-run': '🧪 DRY RUN（API課金あり・Firebaseには書かない）',
@@ -355,7 +474,12 @@ async function main() {
     console.log(`  RECS     : ${pctOf(stats.recs)}  ${stats.recs.json.length}文字`);
     console.log(`  合計 ${used}/${TOTAL_BUDGET}文字（3セクションで共有）`);
     console.log(`  model : ${MODEL}（実際には呼ばない）`);
-    console.log(`  tools : ${WEB_SEARCH_TOOL} (max_uses 8) / max_tokens ${MAX_TOKENS}`);
+    console.log(`  tools : ${WEB_SEARCH_TOOL} (max_uses 8) / max_tokens ${MAX_TOKENS} / stream: true`);
+
+    // ★SSE の組み立てをここで無料で確かめる★
+    // 本番のストリームは分割位置が毎回変わるので、細かく・不揃いに・マルチバイト文字の
+    // 途中で切って流し込む。行またぎとUTF-8の分断の両方を踏ませるのが狙い。
+    await checkStreamParser();
 
     response = JSON.parse(await readFile('data/sample-claude-response.json', 'utf8'));
     console.log('\n-- 見本レスポンスで抽出・正規化を検証 --');
