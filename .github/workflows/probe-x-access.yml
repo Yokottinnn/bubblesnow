@@ -1,0 +1,26 @@
+name: Probe X Access
+
+# 「インターネットに出られるPCがあれば X を無料で検索できるのでは」を実測で確かめる。
+#
+# ★課金は一切発生しない★
+#   - X API は使わない（使えば $0.005/投稿 の従量課金が発生する）
+#   - LLM も呼ばない / Firebase にも触らない
+#   - 各URLに1回ずつ当てて、ステータスと「ログイン壁かどうか」だけを見る
+#
+# 投稿本文やユーザー名はログに出さない（このリポジトリは public）。
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Probe X endpoints (read-only, no API cost)
+        run: node scripts/probe-x-access.mjs
