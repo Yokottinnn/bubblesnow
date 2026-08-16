@@ -162,7 +162,25 @@ Actions のログを直接読んで原因を特定できる（GitHub APIには�
 - **Actions は push で発火する**。`workflow_dispatch`（手動実行）はワークフローが
   デフォルトブランチ(main)に存在しないと使えないため、main にマージするまでは
   対象ファイルへの push が唯一のトリガーになる
-- 現行の Make.com も同じ `users/yokota/recommendations` を**全置換**で書く。
-  Make.com が動くと、ここで追加したrecsは消える。並行稼働中は要注意
-- `add.html` と アプリの 🔄 は Make.com webhook に依存している。
-  Make.com を止める前に代替（Firebase直書き）を用意すること
+- **Make.com への依存は 2026-08-15 に解消済み**（利用者の判断で不使用と決定）。
+  アプリ側のコードに `hook.us2.make.com` は 1 箇所も残っていない。
+
+  | 依存していた場所 | どうしたか |
+  |---|---|
+  | `add.html`（webhookでタスク追加） | `add-direct.html` へ転送するだけにした |
+  | `index.html` の 🔄（webhookで再生成を依頼） | webhook 呼び出しを削除。Firebase を読み直すだけにした |
+
+  `add.html` を消さずに転送にしたのは、iOSショートカットやブックマークがこの URL を
+  指しているため。**ショートカット類を書き換えなくてもそのまま動く。**
+  クエリと hash はそのまま引き渡す。
+
+  🔄 は元々 webhook を `.catch` で握りつぶしていたので、Make.com が recs を
+  更新しなくなった後もエラーは出ず、押しても何も起きない状態が続いていた。
+  webhook の返事を待つための 3 秒の待機も一緒に外したので、押した直後に読み直す。
+
+  なお **recs を生成する仕組みは現在どこにも無い**。Make.com は 08-09 以降
+  `recommendations` を更新しておらず（08-15 時点で 9 件・ID も `r246〜r254` のまま）、
+  代替の `daily-recs.yml` はまだ API で成功していない。**表示は正常だが中身は増えない。**
+
+- Actions から recs を書くときは `users/yokota/recommendations` を**全置換**で書く点に注意。
+  `scripts/push-recs.mjs` は既存を消さず末尾に足すが、`generate-recs.mjs` は置き換える。

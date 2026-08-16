@@ -66,7 +66,7 @@
 - **表示フィルタ**（`visible`, index.html:213）: `dismissed`(ID) にも `added`(ID) にも入らず、既存タスク名と一致せず、`dismissedTitles`（曖昧タイトル一致）にも該当しないものだけ表示。
 - 各recに **source バッジ**（gmail/calendar/news/x/instagram/line/trend、index.html:211）、締切≤7日バッジ、URLリンク、location地図リンク。
 - `+`で採用（`addFromRec`）、`−`で却下（`dismissRec`, index.html:320）。却下はIDとタイトル(lowercase)の両方を `dismissed` / `dismissedTitles` に永続化。
-- **🔄リフレッシュ**（`doRefresh`, index.html:322-328）: Make.com webhook を叩き、3秒後に Firebase を再読込。
+- **🔄リフレッシュ**（`doRefresh`）: Firebase を読み直すだけ。2026-08-15 に Make.com webhook 呼び出しと3秒待機を削除した。**recs の生成は行わない**（生成は Actions 側の役割）。
 
 ### 1-9. その他UI
 - ヘッダに**外部アプリのクイックランチャー**（X, LINE, カレンダー`calshow://`, メール`message://`, Chrome`googlechrome://`）。index.html:172 と 218-223。⚠️ `calshow://`等はiOS専用スキームでPC/Androidでは無反応。
@@ -141,7 +141,7 @@ location : 場所（任意）
 `https://hook.us2.make.com/it31k5edbvjv4cgihpo1a4rg54l7y5mx`
 - **index.html:325**（`doRefresh`）: `{action:"refresh_recommendations", user:"yokota"}` をPOST → Make.comがrecs再生成を実行。
 - **add.html:13**: URLクエリで受けたタスク項目をJSONでPOST → Make.com経由でタスク登録（iOSショートカット等からの追加口と推測）。
-- ⚠️ **移管で Make.com を止めると `add.html` と 🔄リフレッシュが両方壊れる**。add.html の代替（Firebase直書き）を用意しない限り外部追加口が失われる。
+- ✅ **2026-08-15 に解消済み**。`add.html` は `add-direct.html`（Firebase直書き）へ転送するだけにし、🔄 は webhook 呼び出しを削除して Firebase を読み直すだけにした。アプリ側に `hook.us2.make.com` は 1 箇所も残っていない。
 
 ### 3-2. recs.html（Make.com → Firebase 書き戻しの受け皿）
 - Firebase compat **v9.23.0**（recs.html:3-4）。`databaseURL` のみで初期化（**apiKeyなし＝認証なしで書けている**）。
@@ -190,7 +190,7 @@ location : 場所（任意）
 6. recの重複排除が **ID(`dismissed`) と 曖昧タイトル(`dismissedTitles`)の二重管理**。recs全置換で毎回新IDが振られる前提のため、恒久的な除外は実質 `dismissedTitles` の部分文字列マッチ（index.html:213）に依存。誤一致/取りこぼしの両リスク。
 
 ### 5-3. 移管で壊れる/引っかかる箇所
-7. 🔴 **add.html が Make.com webhook 依存**（3-1）。Make.com廃止時に外部タスク追加口が死ぬ。Firebase直書き版への置換設計が必要。
+7. ✅ **add.html が Make.com webhook 依存**（3-1）。2026-08-15 に `add-direct.html` へ転送する形で解消。iOSショートカットの URL は書き換え不要。
 8. ✅ **manifest 絶対パス2点**（4）。GitHub Pagesサブパスで最初に踏む地雷。Phase 1 で修正し、2026-08-14 に実機で確認済み。
 9. 🟡 **Firebase SDK バージョン不一致**（3-3）。一本化するかは任意。
 
@@ -211,8 +211,8 @@ location : 場所（任意）
 
 | ファイル | 役割 | Firebase | 外部 | 移管時メモ |
 |---------|------|---------|------|-----------|
-| index.html | 本体SPA（2タブ） | 直接(compat10.14.1) | Make webhook(refresh) | manifest絶対パス修正 / apiKey要判断 |
-| add.html | 外部からのタスク追加プロキシ | なし | Make webhook(追加) | Make廃止で要代替 |
+| index.html | 本体SPA（2タブ） | 直接(compat10.14.1) | **なし**（webhook削除済み） | manifest修正済 / apiKey要判断 |
+| add.html | 外部からのタスク追加プロキシ | なし | **なし**（add-direct.html へ転送） | 旧URL互換のため残置 |
 | recs.html | Make生成recsの書き戻し受け皿 | 直接(compat9.23.0, 認証なし) | hash受け渡し | バッチ直PUT化で不要にできる |
 | cleanup.html | dismissed整理のメンテ用 | 直接(compat9.22.0) | なし | apiKey除去済 / 収録可否を判断 |
 | manifest.json | PWAマニフェスト | - | - | start_url `/`→`./`（Phase 1で修正済み） |

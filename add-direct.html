@@ -23,6 +23,12 @@ if(!data.priority)data.priority="🟡中";
 
 var el=document.getElementById("m");
 
+/* 表示は innerHTML で組み立てるので、URLから来た値はエスケープしてから差し込む。
+   add.html がここへ転送するようになり、タスク追加はすべてこのファイルを通るため、
+   タスク名に < > が入っているだけで表示が崩れる状態は塞いでおく。 */
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+
 if(!data.name){
   el.innerHTML="⚠️ タスク名がありません";
 }else{
@@ -54,17 +60,17 @@ if(!data.name){
     return arr;
   },function(err,committed){
     if(err||!committed){
-      el.innerHTML="❌ エラー — リロードしてください"+(err?"<div class='t'>"+err.message+"</div>":"");
+      el.innerHTML="❌ エラー — リロードしてください"+(err?"<div class='t'>"+esc(err.message)+"</div>":"");
       return;
     }
     el.innerHTML=
       '<div class="ok">✅</div>'+
-      '<div class="nm">'+(task.icon?task.icon+' ':'')+task.name+'</div>'+
+      '<div class="nm">'+(task.icon?esc(task.icon)+' ':'')+esc(task.name)+'</div>'+
       '<div class="t">'+
-      (task.category?'<span class="tag c1">'+task.category+'</span>':'')+
-      (task.priority?'<span class="tag c2">'+task.priority+'</span>':'')+
-      (task.deadline?'<span class="tag c3">'+task.deadline+'</span>':'')+
-      (task.detail?'<br>'+task.detail:'')+
+      (task.category?'<span class="tag c1">'+esc(task.category)+'</span>':'')+
+      (task.priority?'<span class="tag c2">'+esc(task.priority)+'</span>':'')+
+      (task.deadline?'<span class="tag c3">'+esc(task.deadline)+'</span>':'')+
+      (task.detail?'<br>'+esc(task.detail):'')+
       '</div>'+
       '<div style="margin-top:16px;font-size:12px;color:rgba(255,255,255,.3)">このページを閉じてOKです</div>';
   });

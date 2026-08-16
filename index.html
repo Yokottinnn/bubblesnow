@@ -321,10 +321,11 @@ var dismissRec=function(rid){var rec=recs.find(function(r){return r.id===rid;});
 var _refreshing=useState(false),refreshing=_refreshing[0],sRefreshing=_refreshing[1];
 var doRefresh=function(){
 sRefreshing(true);
-/* Trigger Make.com webhook for recommendation refresh */
-try{fetch("https://hook.us2.make.com/it31k5edbvjv4cgihpo1a4rg54l7y5mx",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"refresh_recommendations",user:"yokota"})}).catch(function(){});}catch(e){}
-/* Re-read Firebase after delay to get updated data */
-setTimeout(function(){if(db){db.ref("users/yokota/recommendations").once("value").then(function(snap){var d=snap.val();var arr=extractRecs(d);if(arr&&arr.length>0)sRecs(sanitizeRecs(arr));sRefreshing(false);}).catch(function(){sRefreshing(false);});}else{sRefreshing(false);}},3000);
+/* Make.com webhook はやめた。recs の生成は GitHub Actions (daily-recs.yml) の仕事で、
+   このボタンは Firebase の最新を読み直すだけ。webhook の返事を待つための3秒も不要になった。
+   なお元の webhook 呼び出しは .catch で握りつぶしていたため、Make.com が recs を
+   更新しなくなった後もエラーは一切出ず、押しても何も起きない状態が続いていた。 */
+if(db){db.ref("users/yokota/recommendations").once("value").then(function(snap){var d=snap.val();var arr=extractRecs(d);if(arr&&arr.length>0)sRecs(sanitizeRecs(arr));sRefreshing(false);}).catch(function(){sRefreshing(false);});}else{sRefreshing(false);}
 };
 return h("div",{style:{position:"fixed",inset:0,display:"flex",flexDirection:"column",background:"linear-gradient(135deg,#0f0c29 0%,#1a1a3a 40%,#24243e 100%)",fontFamily:"'Outfit','Noto Sans JP',sans-serif",overflow:"hidden"}},
 /* Content - with bottom padding for footer */
