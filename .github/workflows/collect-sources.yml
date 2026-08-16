@@ -1,0 +1,57 @@
+name: Collect Rec Sources
+
+# recs の材料を無料で集める実験。
+#
+# ★このワークフローは課金が一切発生しない★
+#   - LLM の API は呼ばない
+#   - Firebase には書き込まない（除外用に読むだけ）
+#   - 使うのは Google ニュースの RSS 検索と はてなブックマークの検索 RSS。どちらもAPIキー不要
+#   - public リポジトリなので Actions の実行時間も無料
+#
+# 狙いは「Claude の web_search をやめて自前で検索する」ための下調べ。
+# 現行 generate-recs.mjs の費用は1回 $0.4 で、その8割超は入力トークン（実測104,003）。
+# 検索結果を積み上げたまま8往復するのが原因なので、検索を自前にすれば大半が消える。
+#
+# まず材料が何件どんな質で集まるかを見て、そのあと整形の方式を決める。
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_age_days:
+        description: '何日前までの記事を拾うか（既定21日）'
+        type: string
+        default: '21'
+        required: false
+      max_resolve:
+        description: 'URL解決を試みる上限件数（既定120）'
+        type: string
+        default: '120'
+        required: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    env:
+      FIREBASE_URL: ${{ secrets.FIREBASE_URL || 'https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app' }}
+      FIREBASE_SECRET: ${{ secrets.FIREBASE_SECRET }}
+      MAX_AGE_DAYS: ${{ inputs.max_age_days || '21' }}
+      MAX_RESOLVE: ${{ inputs.max_resolve || '120' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Collect sources (read-only, no API cost)
+        run: node scripts/collect-sources.mjs
+
+      - name: Upload collected sources
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collected-sources-${{ github.run_number }}
+          path: collected-sources.json
+          if-no-files-found: warn
+          retention-days: 30
