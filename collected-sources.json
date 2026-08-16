@@ -1,0 +1,11 @@
+{
+  "collectedAt": "2026-08-16T10:05:22.757Z",
+  "maxAgeDays": 21,
+  "counts": {
+    "raw": 0,
+    "afterExclusion": 0,
+    "resolved": 0,
+    "usable": 0
+  },
+  "items": []
+}

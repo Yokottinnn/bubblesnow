@@ -44,6 +44,11 @@ jobs:
         with:
           node-version: '20'
 
+      # 収集の前に、純粋な部分（実体参照のデコード・URL解決・話題の足切り）を通信なしで検証する。
+      # 初回はこれが無く、本番で回して初めて文字化けと取りこぼしに気づいた。
+      - name: Self-test (offline)
+        run: node scripts/test-collect-sources.mjs
+
       - name: Collect sources (read-only, no API cost)
         run: node scripts/collect-sources.mjs
 

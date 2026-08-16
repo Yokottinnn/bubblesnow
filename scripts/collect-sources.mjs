@@ -30,13 +30,50 @@ const MAX_RESOLVE = Number(process.env.MAX_RESOLVE || 120);
 
 // カテゴリはアプリ側の定義に合わせる（index.html の CC と同じ語）。
 // icon は rec の見た目に使う。priority は後段で決めるのでここでは持たせない。
-const SOURCES = [
-  { key: 'サウナ',       category: 'おでかけ',       icon: '♨️', queries: ['東京 サウナ 新店', 'サウナ オープン 東京'] },
-  { key: 'テック',       category: 'キャリア・学び', icon: '💻', queries: ['東京 テックカンファレンス', 'エンジニア 勉強会 東京'] },
-  { key: 'アート',       category: 'おでかけ',       icon: '🎨', queries: ['東京 展覧会 開幕', '美術展 東京 開催'] },
-  { key: 'ポイ活',       category: 'お金',           icon: '💰', queries: ['ポイ活 キャンペーン 還元', 'ポイント還元 キャンペーン 開始'] },
-  { key: 'クリプト',     category: 'お金',           icon: '🪙', queries: ['仮想通貨 キャンペーン 配布', 'エアドロップ 暗号資産'] },
+// ★検索語だけでは絞り込めない★
+// 初回は「東京 サウナ 新店」で静岡県の道の駅、「東京 展覧会 開幕」で神社の例大祭が
+// 混ざった。RSS検索は語をAND扱いしてくれないので、取ったあとに見出しで足切りする。
+//   must … このいずれかを含まない見出しは捨てる（そのカテゴリの話題かどうか）
+//   deny … 含んでいたら捨てる（まとめ記事・ランキング・過去の振り返りなど）
+export const SOURCES = [
+  {
+    key: 'サウナ', category: 'おでかけ', icon: '♨️',
+    queries: ['サウナ 新店 オープン', 'サウナ 東京 オープン', 'サウナ 新規オープン'],
+    must: ['サウナ', 'スパ', '温浴'],
+    deny: ['道の駅', 'ランキング', '選', 'まとめ'],
+  },
+  {
+    key: 'テック', category: 'キャリア・学び', icon: '💻',
+    queries: ['エンジニア カンファレンス 開催', 'テックカンファレンス 参加募集', 'エンジニア 勉強会 募集'],
+    must: ['カンファレンス', '勉強会', 'イベント', 'ミートアップ', 'ハッカソン', 'セミナー'],
+    deny: ['ランキング', 'サイト100'],
+  },
+  {
+    key: 'アート', category: 'おでかけ', icon: '🎨',
+    queries: ['美術館 展覧会 開幕', '東京 個展 開催', 'アート展 東京 開幕'],
+    must: ['展', '美術館', 'ギャラリー', 'ミュージアム'],
+    deny: ['例大祭', '祭り', '記念日', '何の日'],
+  },
+  {
+    key: 'ポイ活', category: 'お金', icon: '💰',
+    queries: ['ポイント還元 キャンペーン 開始', 'キャッシュバック キャンペーン 実施', 'ポイ活 キャンペーン 期間限定'],
+    must: ['キャンペーン', '還元', 'ポイント', 'キャッシュバック'],
+    deny: ['なぜ', '調べてみる', '裏技', 'まとめ'],
+  },
+  {
+    key: 'クリプト', category: 'お金', icon: '🪙',
+    queries: ['暗号資産 キャンペーン 開始', '仮想通貨 取引所 キャンペーン', 'エアドロップ 配布 開始'],
+    must: ['キャンペーン', 'エアドロップ', '配布', '付与'],
+    deny: ['ハッカー', '流出', '不正', '逮捕', '被害'],
+  },
 ];
+
+// 見出しがそのカテゴリの話題として通るか。
+export function isRelevant(title, src) {
+  const t = title.toLowerCase();
+  if ((src.deny || []).some((w) => t.includes(w.toLowerCase()))) return false;
+  return (src.must || []).some((w) => t.includes(w.toLowerCase()));
+}
 
 const UA = 'Mozilla/5.0 (compatible; BubblesNowBot/1.0; +https://github.com/Yokottinnn/bubblesnow)';
 
@@ -55,7 +92,7 @@ async function fetchText(url, { timeout = 15000, redirect = 'follow' } = {}) {
 
 // 依存を増やしたくないので RSS は最小限の取り出しで済ませる。
 // item ごとに切り出してからタグを引く。CDATA と実体参照の両方に対応する。
-function parseRss(xml) {
+export function parseRss(xml) {
   const items = [];
   const blocks = xml.split(/<item[\s>]/).slice(1);
   for (const block of blocks) {
@@ -72,20 +109,37 @@ function parseRss(xml) {
   return items;
 }
 
-function decodeXml(s) {
+// ★実体参照は「16進形式」と「二重エスケープ」の両方に当たる★
+// はてブの RSS は &amp;#x9759; のように二重にエスケープして返してくることがあり、
+// 1回デコードしただけだと &#x9759; が残って見出しが読めない（初回の実行で実際に起きた）。
+// 加えて 10進の &#123; しか見ていなかったので 16進はそのまま残っていた。
+// 変化しなくなるまで（最大3回）回す。
+function decodeEntitiesOnce(s) {
   return String(s)
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/<[^>]*>/g, '')
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
-    .replace(/&amp;/g, '&')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#[xX]([0-9a-fA-F]+);/g, (_, h) => safeChar(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => safeChar(Number(d)))
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+}
+
+function safeChar(code) {
+  return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '';
+}
+
+export function decodeXml(s) {
+  let out = String(s).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
+  for (let i = 0; i < 3; i += 1) {
+    const next = decodeEntitiesOnce(out);
+    if (next === out) break;
+    out = next;
+  }
+  return out.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 }
 
 // Google ニュースの見出しは「記事タイトル - 媒体名」の形で来る。媒体名は rec に要らない。
-function stripOutlet(title) {
+export function stripOutlet(title) {
   return title.replace(/\s+-\s+[^-]{2,30}$/, '').trim();
 }
 
@@ -101,13 +155,39 @@ function withinAge(pubDate) {
 // 追えなかったものは url を空にして残す（後段で「URLなし」として扱えるように）。
 async function resolveUrl(link) {
   if (!/^https?:\/\/news\.google\.com\//.test(link)) return link;
+
+  // ①まず通信せずに解く。/articles/ の後ろは URL-safe base64 で、
+  //   その中に発行元URLが素の文字列として入っていることが多い。
+  //   初回実行では 92件中 11件しか解決できず、残りはネットワーク頼みで取りこぼしていた。
+  //   ここで解ければHTTPを1往復も使わないので速いし失敗もしない。
+  const offline = decodeGoogleNewsLink(link);
+  if (offline) return offline;
+
+  // ②ダメならリダイレクトを追う
   const res = await fetchText(link, { timeout: 12000 });
   if (res.ok && res.url && !/^https?:\/\/news\.google\.com\//.test(res.url)) return res.url;
-  // JSでリダイレクトする形で返ってくることがあるので、HTML から発行元URLを拾う
-  const m = res.text.match(/<c-wiz[\s\S]{0,4000}?href="(https?:\/\/(?!news\.google\.com)[^"]+)"/)
+
+  // ③JSでリダイレクトする形で返ってくることがあるので、HTML から発行元URLを拾う
+  const m = res.text.match(/data-n-au="(https?:\/\/(?!news\.google\.com)[^"]+)"/)
+    || res.text.match(/<c-wiz[\s\S]{0,4000}?href="(https?:\/\/(?!news\.google\.com)[^"]+)"/)
     || res.text.match(/url=(https?:\/\/(?!news\.google\.com)[^"'&]+)/)
     || res.text.match(/<link[^>]+rel="canonical"[^>]+href="(https?:\/\/(?!news\.google\.com)[^"]+)"/);
   return m ? decodeXml(m[1]) : '';
+}
+
+export function decodeGoogleNewsLink(link) {
+  const m = link.match(/\/(?:articles|read)\/([A-Za-z0-9_-]{16,})/);
+  if (!m) return '';
+  try {
+    const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    const text = Buffer.from(b64, 'base64').toString('utf8');
+    const u = text.match(/https?:\/\/[^\s"'<>\\ --]{8,}/);
+    if (!u) return '';
+    // protobuf の区切りが末尾に混ざることがあるので、URLとして妥当な範囲まで削る
+    return u[0].replace(/[^\w/?=&%.:#@~+-]+$/, '');
+  } catch {
+    return '';
+  }
 }
 
 async function fbGet(path) {
@@ -117,7 +197,7 @@ async function fbGet(path) {
 }
 
 // index.html:213 と同じ判定。短い語での巻き込みだけ避ける。
-function isDismissed(title, dismissedTitles) {
+export function isDismissed(title, dismissedTitles) {
   const t = title.trim().toLowerCase();
   return dismissedTitles.some((dt) => {
     if (!dt) return false;
@@ -153,6 +233,7 @@ async function main() {
 
   for (const src of SOURCES) {
     let raw = 0;
+    let offTopic = 0;
     for (const q of src.queries) {
       const feeds = [
         `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=ja&gl=JP&ceid=JP:ja`,
@@ -173,16 +254,20 @@ async function main() {
           const key = norm(title);
           if (!key || seen.has(key)) continue;
           seen.add(key);
+          // 検索語が緩いぶん、ここで話題の合致を見る
+          if (!isRelevant(title, src)) { offTopic += 1; continue; }
           collected.push({ ...src, title, link: it.link, pubDate: it.pubDate });
         }
       }
     }
-    stats.push({ key: src.key, raw });
+    stats.push({ key: src.key, raw, offTopic, kept: collected.filter((c) => c.key === src.key).length });
   }
 
-  console.log('── 収集結果（重複除去前 → 後）──');
-  for (const s of stats) console.log(`  ${s.key.padEnd(6, '　')} 生 ${s.raw}件`);
-  console.log(`  合計 ${collected.length}件（重複とタイトル正規化で除去済み）\n`);
+  console.log('── 収集結果 ──');
+  for (const s of stats) {
+    console.log(`  ${s.key.padEnd(6, '　')} 生 ${String(s.raw).padStart(4)}件 → 話題ずれ ${String(s.offTopic).padStart(3)}件を除外 → ${s.kept}件`);
+  }
+  console.log(`  合計 ${collected.length}件\n`);
 
   // 既出・却下済みを落とす
   const before = collected.length;
@@ -236,4 +321,7 @@ async function main() {
   console.log('=== 収集完了・課金は発生していません（$0）===');
 }
 
-main().catch((e) => { console.error('❌ 失敗:', e); process.exit(1); });
+// テストから import したときに収集が走らないよう、直接実行のときだけ動かす。
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop())) {
+  main().catch((e) => { console.error('❌ 失敗:', e); process.exit(1); });
+}
