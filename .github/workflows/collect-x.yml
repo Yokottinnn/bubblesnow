@@ -1,0 +1,44 @@
+name: Collect X Sources
+
+# X から recs の材料を集める。X API は使わないので課金は発生しない。
+#
+# ★Cookie は任意★
+#   無くてもプロフィール経由で動く（2026-08-16 の実測で未認証でも取れることを確認済み）。
+#   X_AUTH_TOKEN / X_CT0 を登録すると検索も使えるようになり、拾える幅が広がる。
+#   Cookie は自分のログイン済みセッションのもの。X API の従量課金とは無関係。
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_age_days:
+        description: '何日前までの投稿を拾うか（既定14日）'
+        type: string
+        default: '14'
+        required: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    env:
+      X_AUTH_TOKEN: ${{ secrets.X_AUTH_TOKEN }}
+      X_CT0: ${{ secrets.X_CT0 }}
+      X_SEARCH_QUERY_ID: ${{ secrets.X_SEARCH_QUERY_ID }}
+      MAX_AGE_DAYS: ${{ inputs.max_age_days || '14' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Collect from X (read-only, no X API cost)
+        run: node scripts/collect-x.mjs
+
+      - name: Upload collected posts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collected-x-${{ github.run_number }}
+          path: collected-x.json
+          if-no-files-found: warn
+          retention-days: 30
