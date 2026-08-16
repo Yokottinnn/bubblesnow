@@ -7,6 +7,11 @@
 #   これを止める決め手は `pmset -c disablesleep 1`。これが 1 なら
 #   蓋を閉じても電源接続中は起きたままになり、launchd の定時実行が動く。
 #   sleep 0 だけでは蓋閉じスリープ（clamshell sleep）は止まらない。
+#
+#   macOS 26 系の一部では `pmset -c/-a disablesleep 1` を実行しても
+#   `pmset -g custom` に disablesleep 行そのものが出てこない（2026-08-16 実機確認）。
+#   このとき値は「0 相当」ではなく「不明」。実機で蓋を閉じてスリープしないことを
+#   確認済みなら、この行が無いだけで常時稼働は機能している。
 
 set -uo pipefail
 
@@ -31,6 +36,7 @@ printf '%s\n' "$ac" | sed 's/^/  /'
 echo
 
 get() { printf '%s\n' "$ac" | awk -v k="$1" '$1==k{print $2; exit}'; }
+has() { printf '%s\n' "$ac" | awk -v k="$1" '$1==k{found=1} END{exit !found}'; }
 
 disablesleep="$(get disablesleep)"
 sleepv="$(get sleep)"
@@ -40,12 +46,17 @@ powernap="$(get powernap)"
 
 echo "── 判定 ──"
 ok=1
-if [ "${disablesleep:-0}" = "1" ]; then
-  echo "  ✅ disablesleep=1  … 蓋を閉じてもスリープしない（これが決め手）"
+if has disablesleep; then
+  if [ "$disablesleep" = "1" ]; then
+    echo "  ✅ disablesleep=1  … 蓋を閉じてもスリープしない（これが決め手）"
+  else
+    echo "  ❌ disablesleep=${disablesleep}  … 蓋を閉じるとスリープする"
+    echo "       外部ディスプレイ無しのクラムシェル運用には 1 が必要"
+    ok=0
+  fi
 else
-  echo "  ❌ disablesleep=${disablesleep:-未設定}  … 蓋を閉じるとスリープする"
-  echo "       外部ディスプレイ無しのクラムシェル運用には 1 が必要"
-  ok=0
+  echo "  ℹ️ disablesleep=未検出  … このmacOSでは pmset -g custom に出てこない可能性がある"
+  echo "       sudo bash mac/apply-power.sh 実行後も出ないなら、実際に蓋を閉じて確認するのが確実"
 fi
 [ "${sleepv:-1}" = "0" ] && echo "  ✅ sleep=0        … システムスリープ無効" || { echo "  ⚠️ sleep=${sleepv:-?}  … 0 が望ましい"; ok=0; }
 [ "${disksleep:-1}" = "0" ] && echo "  ✅ disksleep=0    … ディスクを止めない" || echo "  ⚠️ disksleep=${disksleep:-?}  … 0 が望ましい"

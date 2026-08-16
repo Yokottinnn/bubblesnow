@@ -44,7 +44,8 @@ const TOPICS = [
   {
     key: 'ポイ活', category: 'お金', icon: '💰',
     queries: ['ポイ活 キャンペーン 還元 -is:retweet', 'キャッシュバック キャンペーン 開始'],
-    accounts: ['payannounce', 'rakutenpay'],
+    // payannounce・rakutenpay は 2026-08-16 時点でアカウント消滅（404）のため削除
+    accounts: [],
     must: ['キャンペーン', '還元', 'ポイント', 'キャッシュバック', '増量'],
   },
   {
@@ -62,7 +63,9 @@ const TOPICS = [
   {
     key: 'テック', category: 'キャリア・学び', icon: '💻',
     queries: ['カンファレンス 開催 エンジニア', 'ハッカソン 募集'],
-    accounts: ['connpass'],
+    // connpass は 2026-08-16 時点でハンドルが別人（無関係な鍵垢）に
+    // 乗っ取られているため削除
+    accounts: [],
     must: ['カンファレンス', '勉強会', 'ハッカソン', 'イベント', '登壇', '募集'],
   },
 ];
@@ -83,6 +86,16 @@ function authHeaders() {
     h['x-twitter-auth-type'] = 'OAuth2Session';
   }
   return h;
+}
+
+// プロフィールページ（HTML ルート）は API 用の authorization ヘッダーを
+// 付けると 401 になる（2026-08-16 実機確認）。UA と言語だけの素のブラウザ
+// リクエストにする。
+function profileHeaders() {
+  return {
+    'User-Agent': UA,
+    'Accept-Language': 'ja,en;q=0.8',
+  };
 }
 
 async function get(url, headers) {
@@ -166,27 +179,43 @@ function extractFromGraphql(root) {
 }
 
 // ── B) プロフィール（Cookie 不要。実測で通ることを確認済み）──
+//
+// 2026-08-16 実機確認: プロフィール HTML は schema.org の microdata で
+// 投稿を埋め込む形式に変わっている。1投稿が
+//   <article ... data-tweet-id="123">
+//     <meta content="ID" itemProp="identifier"/>
+//     <meta content="2026-08-14T..." itemProp="dateCreated"/>
+//     <meta content="本文" itemProp="text"/>
+//     ...
+//   </article>
+// という並び（content 属性が先、itemProp が後）。旧コードは
+// "full_text":"..." という GraphQL JSON 埋め込み（すでに廃止済み）を
+// 探していたため、200 が返っても常に 0 件だった。
 async function fetchProfile(handle) {
-  const res = await get(`https://x.com/${handle}`, authHeaders());
+  const res = await get(`https://x.com/${handle}`, profileHeaders());
   if (!res.ok) return { ok: false, status: res.status, items: [] };
-  // 埋め込まれた JSON から本文と ID を拾う
   const items = [];
   const seen = new Set();
-  const re = /"full_text":"((?:[^"\\]|\\.)*)"/g;
-  const ids = res.text.match(/"id_str":"(\d{8,})"/g) || [];
-  let m;
-  let i = 0;
-  while ((m = re.exec(res.text)) !== null) {
-    const idm = ids[i] && ids[i].match(/\d{8,}/);
-    i += 1;
-    const id = idm ? idm[0] : `${handle}-${i}`;
+  for (const chunk of res.text.split('<article ').slice(1)) {
+    const idm = chunk.match(/data-tweet-id="(\d+)"/);
+    const textm = chunk.match(/content="((?:[^"\\]|\\.)*)" itemProp="text"/);
+    const datem = chunk.match(/content="([^"]*)" itemProp="dateCreated"/);
+    if (!idm || !textm) continue;
+    const id = idm[1];
     if (seen.has(id)) continue;
     seen.add(id);
-    try {
-      items.push({ id, text: JSON.parse(`"${m[1]}"`), createdAt: '', handle, likes: 0, reposts: 0 });
-    } catch { /* エスケープが壊れているものは飛ばす */ }
+    items.push({ id, text: decodeHtmlText(textm[1]), createdAt: datem ? datem[1] : '', handle, likes: 0, reposts: 0 });
   }
   return { ok: true, status: res.status, items };
+}
+
+function decodeHtmlText(s) {
+  return s
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
 }
 
 const norm = (s) => s.toLowerCase().replace(/[\s　"'“”‘’|｜・,、。．.]/g, '');
