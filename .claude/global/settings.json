@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read", "Write", "Edit", "NotebookEdit",
+      "Glob", "Grep", "Bash",
+      "WebSearch", "WebFetch",
+      "AskUserQuestion", "Skill", "TodoWrite", "Task"
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -nc --arg t \"【最上位ルール・全プロジェクト共通・例外なし】(1) 選択肢を提示する、または選択を求めるときは必ず AskUserQuestion（ダイアログ）を使う。地の文・箇条書き・表で選択肢を並べて選ばせるのは禁止。(2) 未完了の作業が1件でも残った状態でターンを終えるなら、必ず AskUserQuestion で次の一手を出す。外部イベント待ちで止まる場合も同じで、待つ以外の道（別手段・先に別作業・中止）を選べる形にすること。『結果が出たら報告します』で終えるのは違反。(3) 平文だけで一方的に会話を終えてよいのは、残作業がゼロで利用者が次に何も決めなくてよいときだけ。返答を送る前に『選ばせているか？』『作業は終わり切ったか？』を自問する。検知語を避けた言い換えは違反であり、本文で選択肢を並べるより悪い。詳細は ~/.claude/CLAUDE.md を参照。\" \"{hookSpecificOutput:{hookEventName:\\\"UserPromptSubmit\\\",additionalContext:\\$t}}\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/enforce-dialog.py"
+          }
+        ]
+      }
+    ]
+  }
+}
