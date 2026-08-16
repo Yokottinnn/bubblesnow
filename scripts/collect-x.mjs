@@ -16,6 +16,14 @@
 //   B) プロフィール … Cookie 不要。特定アカウントの新着を拾う
 // A が通らなくても B だけで材料は集まるので、鍵なしでも動く。
 //
+// ★A（検索）は 2026-08-16 時点で塞がれている★
+// 実 Cookie（auth_token/ct0、形式は正常と確認済み）と実機から拾った現行の
+// queryId・正しいパス（/i/api/graphql/ ではなく /graphql/）を使っても 401。
+// 404（queryId 不一致）ではなく 401（認証拒否）まで進むことから、X 側が
+// リクエストごとの署名ヘッダー（x-client-transaction-id 等、ブラウザで
+// JS を実行しないと算出できない値）を要求するようになった可能性が高い。
+// 現状は B（プロフィール）のみで運用する想定。
+//
 // ★静かにゼロ件になるのを防ぐ★
 // X はこの種の経路を継続的に塞ぐ。壊れたときに「今日は何も無かった」と
 // 区別がつかないのが一番まずいので、方式ごとの成否と件数を必ず出す。
@@ -34,7 +42,9 @@ const WEB_BEARER = process.env.X_BEARER
 
 // GraphQL の queryId は X 側の更新で変わる。変わったら 404 になるので、
 // 環境変数で差し替えられるようにしておく（ここを直すだけで復旧できる）。
-const SEARCH_QUERY_ID = process.env.X_SEARCH_QUERY_ID || 'nK1dw4oV3k4w5TdtcAdSww';
+// 2026-08-16 実機確認: main.*.js バンドル中の
+// operationName:"SearchTimeline" の queryId で更新（旧: nK1dw4oV3k4w5TdtcAdSww）。
+const SEARCH_QUERY_ID = process.env.X_SEARCH_QUERY_ID || 'hyPfJYJ_XAtDYoslQc-Rgg';
 
 const MAX_AGE_DAYS = Number(process.env.MAX_AGE_DAYS || 14);
 const PER_QUERY = Number(process.env.X_PER_QUERY || 20);
@@ -134,7 +144,10 @@ async function searchX(query) {
     longform_notetweets_rich_text_read_enabled: true,
     responsive_web_enhance_cards_enabled: false,
   };
-  const url = `https://x.com/i/api/graphql/${SEARCH_QUERY_ID}/SearchTimeline`
+  // 2026-08-16 実機確認: main.*.js バンドル中の文字列リテラルは "/graphql/" のみで
+  // "/i/api/graphql/" は存在しない。旧パスだと 404、"/graphql/" だと 401 になる
+  // （queryId は通るが、認証は別の壁で弾かれる。詳細は下のコメント参照）。
+  const url = `https://x.com/graphql/${SEARCH_QUERY_ID}/SearchTimeline`
     + `?variables=${encodeURIComponent(JSON.stringify(variables))}`
     + `&features=${encodeURIComponent(JSON.stringify(features))}`;
 
@@ -299,7 +312,7 @@ async function main() {
     process.exit(1);
   }
   if (HAS_COOKIE && totalSearch === 0) {
-    console.warn('⚠️ Cookie はあるのに検索が0件。失効か queryId の変更が疑われます（プロフィール分だけ使います）');
+    console.warn('⚠️ Cookie はあるのに検索が0件。2026-08-16時点で既知の問題（署名ヘッダー要求で401、詳細はファイル冒頭コメント）。プロフィール分だけ使います');
   }
 
   console.log('── 見出しの例（各カテゴリ最大3件）──');
