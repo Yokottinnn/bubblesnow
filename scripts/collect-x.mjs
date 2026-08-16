@@ -6,23 +6,19 @@
 // 自分のアカウントで自分が見られるものを見るだけなので、未認証アクセスではない。
 //
 // ★2つの取り方を用意して、通ったほうを使う★
-// 2026-08-16 に Actions ランナーから実測した結果:
-//   x.com 検索ページ  … 200 だが JS シェルのみ（投稿リンクなし・ログイン壁の目印あり）
-//   x.com プロフィール … ✅ 未認証でも投稿リンクが取れる
-//   syndication       … 429
-//   nitter.net        … 0バイト（機能していない）
-// つまり塞がれているのは「検索」だけ。so:
 //   A) 検索        … Cookie が要る。X_AUTH_TOKEN / X_CT0 があれば試す
-//   B) プロフィール … Cookie 不要。特定アカウントの新着を拾う
+//   B) プロフィール … Cookie 不要。特定アカウントの新着を拾う（生 fetch で可）
 // A が通らなくても B だけで材料は集まるので、鍵なしでも動く。
 //
-// ★A（検索）は 2026-08-16 時点で塞がれている★
-// 実 Cookie（auth_token/ct0、形式は正常と確認済み）と実機から拾った現行の
-// queryId・正しいパス（/i/api/graphql/ ではなく /graphql/）を使っても 401。
-// 404（queryId 不一致）ではなく 401（認証拒否）まで進むことから、X 側が
-// リクエストごとの署名ヘッダー（x-client-transaction-id 等、ブラウザで
-// JS を実行しないと算出できない値）を要求するようになった可能性が高い。
-// 現状は B（プロフィール）のみで運用する想定。
+// ★A（検索）は生 fetch では通らない★
+// 2026-08-16 実機確認: 正しい queryId・パス（/graphql/、旧 /i/api/graphql/ は
+// 404 になる）と正しい Cookie を使っても 401。X 側がリクエストごとの署名
+// （x-client-transaction-id など、ブラウザで JS を実行しないと算出できない値）
+// を要求しているためと判明。curl や fetch では原理的に回避できない
+// （Cloudflare の TLS/HTTP2 フィンガープリント判定と推測）。
+// 実ブラウザ（Playwright で headless 起動した実 Chrome、channel: 'chrome'）
+// 経由なら Cookie を積むだけで 200 になることを確認済み。以降、検索は
+// Playwright 経由で行う。プロフィールは生 fetch のままで十分（Cookie 不要）。
 //
 // ★静かにゼロ件になるのを防ぐ★
 // X はこの種の経路を継続的に塞ぐ。壊れたときに「今日は何も無かった」と
@@ -31,23 +27,13 @@
 // 実行: node scripts/collect-x.mjs
 
 import { writeFile } from 'node:fs/promises';
+import { chromium } from 'playwright';
 
 const AUTH_TOKEN = process.env.X_AUTH_TOKEN || '';
 const CT0 = process.env.X_CT0 || '';
 const HAS_COOKIE = Boolean(AUTH_TOKEN && CT0);
 
-// X の Web クライアントが使う公開ベアラ。秘密情報ではなく、誰のブラウザでも同じ値。
-const WEB_BEARER = process.env.X_BEARER
-  || 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
-
-// GraphQL の queryId は X 側の更新で変わる。変わったら 404 になるので、
-// 環境変数で差し替えられるようにしておく（ここを直すだけで復旧できる）。
-// 2026-08-16 実機確認: main.*.js バンドル中の
-// operationName:"SearchTimeline" の queryId で更新（旧: nK1dw4oV3k4w5TdtcAdSww）。
-const SEARCH_QUERY_ID = process.env.X_SEARCH_QUERY_ID || 'hyPfJYJ_XAtDYoslQc-Rgg';
-
 const MAX_AGE_DAYS = Number(process.env.MAX_AGE_DAYS || 14);
-const PER_QUERY = Number(process.env.X_PER_QUERY || 20);
 
 // 検索語と、拾いたいアカウント。アカウントは「告知が流れてくる場所」を選ぶ。
 const TOPICS = [
@@ -82,22 +68,6 @@ const TOPICS = [
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
-function authHeaders() {
-  const h = {
-    'User-Agent': UA,
-    'Accept-Language': 'ja,en;q=0.8',
-    authorization: `Bearer ${decodeURIComponent(WEB_BEARER)}`,
-    'x-twitter-active-user': 'yes',
-    'x-twitter-client-language': 'ja',
-  };
-  if (HAS_COOKIE) {
-    h.cookie = `auth_token=${AUTH_TOKEN}; ct0=${CT0}`;
-    h['x-csrf-token'] = CT0;
-    h['x-twitter-auth-type'] = 'OAuth2Session';
-  }
-  return h;
-}
-
 // プロフィールページ（HTML ルート）は API 用の authorization ヘッダーを
 // 付けると 401 になる（2026-08-16 実機確認）。UA と言語だけの素のブラウザ
 // リクエストにする。
@@ -121,43 +91,45 @@ async function get(url, headers) {
   }
 }
 
-// ── A) 検索（Cookie が要る）──
-async function searchX(query) {
-  const variables = {
-    rawQuery: query,
-    count: PER_QUERY,
-    querySource: 'typed_query',
-    product: 'Latest', // 新着順。人気順だと古い告知が上に来る
-  };
-  const features = {
-    responsive_web_graphql_timeline_navigation_enabled: true,
-    verified_phone_label_enabled: false,
-    creator_subscriptions_tweet_preview_api_enabled: true,
-    responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
-    tweetypie_unmention_optimization_enabled: true,
-    responsive_web_edit_tweet_api_enabled: true,
-    view_counts_everywhere_api_enabled: true,
-    longform_notetweets_consumption_enabled: true,
-    tweet_awards_web_tipping_enabled: false,
-    freedom_of_speech_not_reach_fetch_enabled: true,
-    standardized_nudges_misinfo: true,
-    longform_notetweets_rich_text_read_enabled: true,
-    responsive_web_enhance_cards_enabled: false,
-  };
-  // 2026-08-16 実機確認: main.*.js バンドル中の文字列リテラルは "/graphql/" のみで
-  // "/i/api/graphql/" は存在しない。旧パスだと 404、"/graphql/" だと 401 になる
-  // （queryId は通るが、認証は別の壁で弾かれる。詳細は下のコメント参照）。
-  const url = `https://x.com/graphql/${SEARCH_QUERY_ID}/SearchTimeline`
-    + `?variables=${encodeURIComponent(JSON.stringify(variables))}`
-    + `&features=${encodeURIComponent(JSON.stringify(features))}`;
-
-  const res = await get(url, authHeaders());
-  if (!res.ok) return { ok: false, status: res.status, items: [] };
+// ── A) 検索（Cookie が要る・headless 実 Chrome で実行）──
+//
+// 検索ページを開いて SearchTimeline への応答を横取りする。ページの JS が
+// 署名ヘッダーの算出からリクエスト送信まで全部やってくれるので、こちらは
+// Cookie を積んでナビゲートするだけでいい。ブラウザは呼び出し側
+// （runSearches）で 1 回だけ起動し、使い回す。
+async function searchX(context, query) {
+  const page = await context.newPage();
   try {
-    return { ok: true, status: res.status, items: extractFromGraphql(JSON.parse(res.text)) };
-  } catch {
-    return { ok: false, status: res.status, items: [] };
+    const respPromise = page.waitForResponse(
+      (res) => res.url().includes('/SearchTimeline'),
+      { timeout: 20000 },
+    );
+    const url = `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query&f=live`;
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const res = await respPromise;
+    if (!res.ok()) return { ok: false, status: res.status(), items: [] };
+    const json = await res.json();
+    return { ok: true, status: res.status(), items: extractFromGraphql(json) };
+  } catch (e) {
+    return { ok: false, status: e.name === 'TimeoutError' ? 'timeout' : e.message, items: [] };
+  } finally {
+    await page.close();
   }
+}
+
+// 検索に使うブラウザコンテキストを 1 回だけ用意する。Chrome 本体
+// （channel: 'chrome'）を headless 起動する。バンドルされた Chromium だと
+// ボット判定に弾かれやすいが、実 Chrome なら通ることを実機確認済み。
+async function openSearchContext() {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  });
+  await context.addCookies([
+    { name: 'auth_token', value: AUTH_TOKEN, domain: '.x.com', path: '/' },
+    { name: 'ct0', value: CT0, domain: '.x.com', path: '/' },
+  ]);
+  return { browser, context };
 }
 
 // GraphQL の入れ子は版によって変わるので、決め打ちで辿らずに
@@ -255,14 +227,24 @@ async function main() {
   const seen = new Set();
   const report = [];
 
+  let browser = null;
+  let context = null;
+  if (HAS_COOKIE) {
+    try {
+      ({ browser, context } = await openSearchContext());
+    } catch (e) {
+      console.warn(`⚠️ headless Chrome の起動に失敗。検索は今回スキップします: ${e.message}`);
+    }
+  }
+
   for (const topic of TOPICS) {
     let viaSearch = 0;
     let viaProfile = 0;
     const failures = [];
 
-    if (HAS_COOKIE) {
+    if (context) {
       for (const q of topic.queries) {
-        const r = await searchX(q);
+        const r = await searchX(context, q);
         if (!r.ok) { failures.push(`検索 status ${r.status}`); continue; }
         for (const it of r.items) {
           if (!withinAge(it.createdAt)) continue;
@@ -294,6 +276,8 @@ async function main() {
     report.push({ key: topic.key, viaSearch, viaProfile, failures });
   }
 
+  if (browser) await browser.close();
+
   console.log('── 方式別の取得件数 ──');
   for (const r of report) {
     console.log(`  ${r.key.padEnd(6, '　')} 検索 ${String(r.viaSearch).padStart(3)}件 / プロフィール ${String(r.viaProfile).padStart(3)}件`);
@@ -307,12 +291,12 @@ async function main() {
   // ★静かにゼロ件で終わらせない★
   if (!collected.length) {
     console.error('❌ 1件も取れていません。X 側の仕様変更か Cookie の失効が疑われます。');
-    console.error('   ・検索が全滅 → X_AUTH_TOKEN / X_CT0 の失効、または X_SEARCH_QUERY_ID の変更');
+    console.error('   ・検索が全滅 → X_AUTH_TOKEN / X_CT0 の失効、headless Chrome 起動失敗、または X 側のページ構造変更');
     console.error('   ・プロフィールも全滅 → X が未認証アクセスを塞いだ可能性');
     process.exit(1);
   }
   if (HAS_COOKIE && totalSearch === 0) {
-    console.warn('⚠️ Cookie はあるのに検索が0件。2026-08-16時点で既知の問題（署名ヘッダー要求で401、詳細はファイル冒頭コメント）。プロフィール分だけ使います');
+    console.warn('⚠️ Cookie はあるのに検索が0件。Cookie 失効・queryId 変更・headless Chrome 起動失敗のいずれかを疑う（プロフィール分だけ使います）');
   }
 
   console.log('── 見出しの例（各カテゴリ最大3件）──');

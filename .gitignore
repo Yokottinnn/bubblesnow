@@ -1,2 +1,3 @@
 mac/.env
 mac/logs/
+node_modules/
