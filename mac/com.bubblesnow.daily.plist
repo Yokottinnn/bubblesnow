@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.bubblesnow.daily</string>
+
+  <!-- run-daily.sh の中で node を呼ぶ。launchd は PATH が痩せているのでラッパー越しにする -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REPO__/mac/run-daily.sh</string>
+  </array>
+
+  <!-- 0:00 JST。Mac のローカル時刻で解釈されるので UTC 換算は不要 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>0</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <!-- 実行時刻に眠っていた場合、起きた直後に取り返す -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__REPO__/mac/logs/daily.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO__/mac/logs/daily.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>
