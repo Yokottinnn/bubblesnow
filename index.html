@@ -291,8 +291,7 @@ var _tab=useState("tasks"),tab=_tab[0],sTab=_tab[1];
 
 useEffect(function(){
   if(!window.firebase||!firebase.auth){sReady(true);return;}
-  /* リダイレクト方式の戻りを先に拾う。iOSのホーム画面アプリでは
-     ポップアップがブロックされるので、そちらへ倒す必要がある。 */
+  /* popup がブロックされて redirect に落ちた場合の戻りをここで拾う。 */
   firebase.auth().getRedirectResult().catch(function(e){sErr(e.message||String(e));});
   var un=firebase.auth().onAuthStateChanged(function(u){sUser(u);sReady(true);});
   return un;
@@ -301,12 +300,13 @@ useEffect(function(){
 var signIn=function(){
   sErr("");
   var p=new firebase.auth.GoogleAuthProvider();
-  /* standalone（ホーム画面から起動）ではポップアップが開けないことが多い。
-     開けるならポップアップの方が体験が良いので、失敗したときだけ落とす。 */
-  var standalone=window.navigator.standalone===true||window.matchMedia("(display-mode: standalone)").matches;
-  if(standalone)return firebase.auth().signInWithRedirect(p);
+  /* 2026-08-23: standalone だから即リダイレクト、という決め打ちをやめた。
+     iOS の standalone（ホーム画面起動）で signInWithRedirect すると、
+     戻ってきたときに別のストレージ領域として扱われ、リダイレクト待ちの
+     状態を見失って永遠にログイン画面に戻ることがある（実機で確認）。
+     まず popup を試し、それがブロックされたときだけ redirect に落とす。 */
   firebase.auth().signInWithPopup(p).catch(function(e){
-    if(e&&(e.code==="auth/popup-blocked"||e.code==="auth/operation-not-supported-in-this-environment")){
+    if(e&&(e.code==="auth/popup-blocked"||e.code==="auth/operation-not-supported-in-this-environment"||e.code==="auth/cancelled-popup-request")){
       firebase.auth().signInWithRedirect(p);
     }else{sErr(e.message||String(e));}
   });
