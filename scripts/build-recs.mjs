@@ -36,6 +36,9 @@ const MIN_RECS = Number(process.env.MIN_RECS || 15);
 const MAX_RECS = Number(process.env.MAX_RECS || 25);
 // 1カテゴリが枠を独占しないようにする。偏ると「おすすめ」として使い物にならない。
 const MAX_PER_CATEGORY = Number(process.env.MAX_PER_CATEGORY || 8);
+// recommendations 全体の上限。毎日追加するので、これが無いと無限に増える。
+// 一覧をスクロールして眺められる量として 60 を既定にした。
+const MAX_TOTAL = Number(process.env.MAX_TOTAL || 60);
 
 const SOURCE_FILES = ['collected-x.json', 'collected-sources.json'];
 
@@ -172,6 +175,28 @@ export function assignIds(recs, existing) {
   return recs.map((r) => ({ id: `r${next++}`, ...r }));
 }
 
+// ★溜まり続けないようにする★
+// 落とす順番に意味がある。まず「もう役に立たない」ものを消し、
+// それでも多いときだけ古い順に削る。新しさより有用性を優先する。
+export function prune(recs, { limit = MAX_TOTAL, today = new Date() } = {}) {
+  const iso = today.toISOString().slice(0, 10);
+
+  // ① 締切を過ぎたものは、残しても押せない
+  const alive = recs.filter((r) => !r?.deadline || r.deadline >= iso);
+
+  // ② 同じタイトルが増えたら新しい方を残す（後勝ち）。
+  //    毎日同じキャンペーンが流れてくるので、これが効く。
+  const byTitle = new Map();
+  for (const r of alive) {
+    const k = norm(r?.title);
+    if (k) byTitle.set(k, r);
+  }
+  const unique = [...byTitle.values()];
+
+  // ③ それでも多ければ古い順に落とす。末尾が新しいので後ろから残す。
+  return unique.length <= limit ? unique : unique.slice(unique.length - limit);
+}
+
 async function loadSources() {
   const items = [];
   const found = [];
@@ -279,9 +304,12 @@ async function main() {
   console.log('📦 既存recsを recs-backup.json に退避');
 
   // 既存を消さず末尾に足す。アプリ側の .set() は全置換なので、ここで消すと復元できない。
-  const merged = existing.concat(withIds);
+  // ただし毎日 20件超が積まれるので、放っておくと1週間で200件を超える。
+  // 一覧として使えなくなるだけでなく、既出除外の照合も重くなる。
+  const merged = prune(existing.concat(withIds));
   await fbPut(`${BASE}/recommendations`, merged);
-  console.log(`\n✅ 書き込み完了: ${BASE}/recommendations（既存 ${existing.length} + 新規 ${withIds.length} = ${merged.length}件）`);
+  const removed = existing.length + withIds.length - merged.length;
+  console.log(`\n✅ 書き込み完了: ${BASE}/recommendations（既存 ${existing.length} + 新規 ${withIds.length}${removed ? ` − 整理 ${removed}` : ''} = ${merged.length}件）`);
 
   const after = (await fbGet(`${BASE}/recommendations`).catch(() => null)) || [];
   const n = Array.isArray(after) ? after.filter(Boolean).length : 0;

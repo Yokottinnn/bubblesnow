@@ -6,7 +6,7 @@
 //
 // 実行: node scripts/test-build-recs.mjs
 
-import { score, extractDeadline, toRec, isDismissed, assignIds } from './build-recs.mjs';
+import { score, extractDeadline, toRec, isDismissed, assignIds, prune } from './build-recs.mjs';
 
 let pass = 0;
 let fail = 0;
@@ -86,6 +86,33 @@ console.log('\n── ID採番: 既存の続きから振る ──');
 eq('最大値+1から', assignIds([{ title: 'a' }, { title: 'b' }], [{ id: 'r246' }, { id: 'r254' }]).map((r) => r.id), ['r255', 'r256']);
 eq('既存が空なら r1 から', assignIds([{ title: 'a' }], []).map((r) => r.id), ['r1']);
 eq('rNNN 以外の id は無視', assignIds([{ title: 'a' }], [{ id: 'weird' }]).map((r) => r.id), ['r1']);
+
+console.log('\n── 溜まらないようにする ──');
+const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+const many = Array.from({ length: 100 }, (_, i) => ({ id: `r${i}`, title: `件名${i}` }));
+
+eq('上限までに削る', prune(many, { limit: 60 }).length, 60);
+eq('削るのは古い方（末尾の新しいものを残す）', prune(many, { limit: 3 }).map((r) => r.title), ['件名97', '件名98', '件名99']);
+eq('上限内ならそのまま', prune(many.slice(0, 10), { limit: 60 }).length, 10);
+
+eq('締切切れは落とす', prune([
+  { title: 'きれてる', deadline: day(-1) },
+  { title: 'まだ有効', deadline: day(3) },
+  { title: '締切なし' },
+], { limit: 60 }).map((r) => r.title), ['まだ有効', '締切なし']);
+
+eq('同じタイトルは新しい方を残す', prune([
+  { title: 'PayPay 20%還元', url: 'old' },
+  { title: 'PayPay 20%還元', url: 'new' },
+], { limit: 60 }).map((r) => r.url), ['new']);
+
+// 押せないものを消してから数を削る、という順番でないと有効な rec が先に消える
+eq('先に締切切れを消してから数を削る', prune([
+  { title: 'きれてる1', deadline: day(-5) },
+  { title: 'きれてる2', deadline: day(-3) },
+  { title: '有効A' },
+  { title: '有効B' },
+], { limit: 2 }).map((r) => r.title), ['有効A', '有効B']);
 
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);
