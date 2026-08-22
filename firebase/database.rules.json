@@ -1,27 +1,9 @@
 {
   "rules": {
-    "//": [
-      "★誰でも読み書きできる状態を閉じるためのルール★",
-      "これまで users/yokota/* は認証なしで読み書きできた。タスクには確定申告・通院・",
-      "冠婚葬祭が含まれ、DBのURLはアプリの公開ソースに書かれているので、",
-      "URLを知る誰でも読めた。アプリのログイン画面は文字列比較の目隠しでしかなく、",
-      "Firebase には何も伝わっていなかった。",
-      "",
-      "★UID_1〜UID_3 を実際の uid に置き換えてから公開すること★",
-      "3アカウント（n-yokota@fieldbeside.com / tacseigaku@gmail.com /",
-      "daredemosanka@gmail.com）それぞれでサインインして uid を控える。",
-      "取り方は docs/firebase-security.md を参照。",
-      "",
-      "どのアカウントでログインしても見えるデータは同じ（users/yokota 配下）。",
-      "アカウントごとに中身が分かれるわけではない。",
-      "",
-      "バッチ（Mac の launchd）と iOS ショートカットは REST に",
-      "?auth=<database secret> を付けて叩く。secret はルールを迂回する管理者権限。"
-    ],
     "users": {
       "yokota": {
-        ".read": "auth != null && (auth.uid === 'UID_1' || auth.uid === 'UID_2' || auth.uid === 'UID_3')",
-        ".write": "auth != null && (auth.uid === 'UID_1' || auth.uid === 'UID_2' || auth.uid === 'UID_3')",
+        ".read": "auth != null && (auth.uid === 'yacdjrvgxZQuklKoYkIFoWtWXMW2' || auth.uid === 'JM7t6vAfPeTuoQbwVukUqCLpyYV2' || auth.uid === 'Yi9Oi0Y095aZSIdwaHzmTh52fOW2')",
+        ".write": "auth != null && (auth.uid === 'yacdjrvgxZQuklKoYkIFoWtWXMW2' || auth.uid === 'JM7t6vAfPeTuoQbwVukUqCLpyYV2' || auth.uid === 'Yi9Oi0Y095aZSIdwaHzmTh52fOW2')",
         "tasks": {
           ".validate": "newData.hasChildren() || newData.val() === null"
         },
@@ -29,11 +11,6 @@
           ".validate": "newData.hasChildren() || newData.val() === null"
         },
         "inbox": {
-          "//": [
-            "iOS ショートカットが POST する受け口。アプリが開いたときに tasks へ移して空にする。",
-            "ショートカットは secret で書くのでルールは迂回される。ここの読み書きは",
-            "アプリ側（取り込みと削除）のために許可している。"
-          ],
           "$item": {
             ".validate": "newData.hasChild('name') || newData.val() === null"
           }
