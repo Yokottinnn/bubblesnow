@@ -28,7 +28,7 @@ mkdir -p "$HERE/logs"
 MODE="${RECS_MODE:-live}"
 
 echo ""
-echo "=== $(date '+%Y-%m-%d %H:%M:%S') 日次バッチ開始（mode=$MODE）==="
+echo "=== $(date '+%Y-%m-%d %H:%M:%S') 日次バッチ開始（mode=${MODE}）==="
 
 # ローカルの秘密を読む（X の Cookie など）。無くてもプロフィール経由で動く。
 [ -f "$HERE/.env" ] && set -a && . "$HERE/.env" && set +a
