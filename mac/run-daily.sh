@@ -52,9 +52,16 @@ if ! node scripts/collect-x.mjs; then
   exit 1
 fi
 
-# ── ② 選別・整形・反映 ──
+# ── ②' 学習 ──
+# 昨日までの採用・却下から好みを学び直す。失敗しても選別は続ける
+# （学習は「あれば効く」もので、無くても手書きの重みで動く）。
 echo ""
-echo "--- ② 選別・整形 ---"
+echo "--- ②' 過去の採用・却下から学習 ---"
+node scripts/learn-preferences.mjs || echo "  ⚠️ 学習に失敗しました。手書きの重みだけで選びます"
+
+# ── ③ 選別・整形・反映 ──
+echo ""
+echo "--- ③ 選別・整形 ---"
 if ! MODE="$MODE" node scripts/build-recs.mjs; then
   echo "❌ 選別・整形に失敗しました。"
   echo "   材料はあるので collected-x.json を見れば原因を追えます。"

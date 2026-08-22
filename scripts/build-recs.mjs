@@ -22,6 +22,7 @@
 //       MODE=live node scripts/build-recs.mjs  … Firebase に反映（$0）
 
 import { readFile, writeFile } from 'node:fs/promises';
+import { ngrams } from './learn-preferences.mjs';
 
 const FIREBASE_URL = (process.env.FIREBASE_URL || '').replace(/\/$/, '');
 const FIREBASE_SECRET = process.env.FIREBASE_SECRET || '';
@@ -41,6 +42,14 @@ const MAX_PER_CATEGORY = Number(process.env.MAX_PER_CATEGORY || 8);
 const MAX_TOTAL = Number(process.env.MAX_TOTAL || 60);
 
 const SOURCE_FILES = ['collected-x.json', 'collected-sources.json'];
+// learn-preferences.mjs が書き出す学習結果。無ければ手書きの重みだけで動く。
+const WEIGHTS_FILE = 'learned-weights.json';
+// 学習分がスコア全体を支配しないための上限。手書きの信号は「行動できるか」を
+// 見ているので、好み（学習）でそれを覆させない。
+const MAX_LEARNED = Number(process.env.MAX_LEARNED || 4);
+
+let LEARNED = null;
+export function setLearned(w) { LEARNED = w; }
 
 async function fbGet(path) {
   const res = await fetch(`${FIREBASE_URL}/${path}.json${auth}`);
@@ -67,17 +76,24 @@ const strip = (s) => String(s ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' '
 const SIGNALS = [
   // 行動できるものを上に。締切や金額がある告知は、読んで終わりの記事より価値が高い。
   { re: /(\d+(\.\d+)?\s*[%％]|\d+[,\d]*\s*円|\d+\s*ポイント|最大\s*\d)/, points: 3, why: '具体的な金額や率がある' },
-  { re: /(まで|締切|期限|終了|〜\d+\/\d+|\d+月\d+日まで)/, points: 3, why: '期限が示されている' },
+  { re: /(まで|締切|期限|〜\d+\/\d+|\d+月\d+日まで)/, points: 3, why: '期限が示されている' },
   { re: /(開始|スタート|開催|オープン|受付|募集|エントリー|開幕|新登場|リリース)/, points: 2, why: '始まる告知' },
   { re: /(限定|先着|抽選|無料|プレゼント|配布)/, points: 2, why: '取りに行く理由がある' },
   { re: /(新店|新規|初|リニューアル)/, points: 1, why: '新しい' },
 ];
 
+// ★これに当たったら失格★
+// 重みではなく足切りにする。減点にしておくと、他の加点や学習した好みで
+// 打ち消されて浮上する。実際テストで「サウナのキャンペーンは終了しました」が
+// 好みの加点に救われて正のスコアになった。終わった告知に点数の議論は要らない。
+const DISQUALIFY = [
+  { re: /(終了しました|終了いたしました|受付終了|募集終了|締め切りました|中止|延期)/, why: '既に終わっている' },
+  { re: /(詐欺|注意喚起|被害|流出|不正アクセス|逮捕|炎上)/, why: 'ネガティブな話題' },
+];
+
 // 逆に、おすすめとして出しても行動につながらないもの。
 const PENALTIES = [
   { re: /(まとめ|ランキング|\d+選|振り返り|とは|徹底解説|比較してみた)/, points: -4, why: '読み物であって行動対象ではない' },
-  { re: /(終了しました|受付終了|締め切りました|中止|延期)/, points: -8, why: '既に終わっている' },
-  { re: /(詐欺|注意喚起|被害|流出|不正|逮捕|炎上)/, points: -8, why: 'ネガティブな話題' },
   { re: /^(RT|【PR】|\[PR\])/, points: -3, why: '転載や広告表記' },
 ];
 
@@ -85,6 +101,11 @@ export function score(item) {
   const text = `${item.title || ''} ${item.desc || ''}`;
   const reasons = [];
   let total = 0;
+
+  // 失格は最初に見る。以降の加点も学習分も見ない。
+  for (const d of DISQUALIFY) {
+    if (d.re.test(text)) return { total: -100, reasons: [`失格: ${d.why}`], disqualified: true };
+  }
 
   for (const s of SIGNALS) {
     if (s.re.test(text)) { total += s.points; reasons.push(`+${s.points} ${s.why}`); }
@@ -108,6 +129,25 @@ export function score(item) {
   // 短すぎる見出しは意味が取れない。
   const len = strip(item.title).length;
   if (len < 10) { total -= 3; reasons.push('-3 見出しが短すぎる'); }
+
+  // ★過去の採用・却下から学んだ好み★
+  // 上の信号は「行動できる告知か」を見ている。こちらは「あなたが選ぶか」。
+  // 別の軸なので足すが、学習分は ±MAX_LEARNED に収める。
+  // 好みの強さで「終了しました」を拾い上げるようなことを起こさないため。
+  if (LEARNED && LEARNED.length) {
+    const grams = new Set(ngrams(text));
+    let learned = 0;
+    const hits = [];
+    for (const w of LEARNED) {
+      if (grams.has(w.term)) { learned += w.weight; hits.push(w.term); }
+    }
+    learned = Math.max(-MAX_LEARNED, Math.min(MAX_LEARNED, learned));
+    const rounded = Math.round(learned * 10) / 10;
+    if (Math.abs(rounded) >= 0.5) {
+      total += rounded;
+      reasons.push(`${rounded > 0 ? '+' : ''}${rounded} 過去の傾向（${hits.slice(0, 3).join('/')}）`);
+    }
+  }
 
   return { total, reasons };
 }
@@ -216,6 +256,17 @@ async function loadSources() {
 async function main() {
   console.log('=== recs の選別・整形（LLM不使用・API課金なし）===');
   console.log(`モード: ${WRITES ? '🚀 LIVE（Firebaseに書き込む）' : '🧪 DRY RUN（書き込まない）'}\n`);
+
+  // 学習結果があれば読む。無くても手書きの重みだけで動く。
+  try {
+    const data = JSON.parse(await readFile(WEIGHTS_FILE, 'utf8'));
+    if (Array.isArray(data.weights) && data.weights.length) {
+      LEARNED = data.weights;
+      console.log(`学習済みの好み: ${LEARNED.length}語（${(data.learnedAt || '').slice(0, 10) || '日付不明'} 時点）\n`);
+    }
+  } catch {
+    console.log('学習結果なし。手書きの重みだけで選びます（learn-preferences.mjs で作れます）\n');
+  }
 
   const { items, found } = await loadSources();
   if (!found.length) {

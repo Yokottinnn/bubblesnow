@@ -6,7 +6,8 @@
 //
 // 実行: node scripts/test-build-recs.mjs
 
-import { score, extractDeadline, toRec, isDismissed, assignIds, prune } from './build-recs.mjs';
+import { score, extractDeadline, toRec, isDismissed, assignIds, prune, setLearned } from './build-recs.mjs';
+import { learnWeights, ngrams } from './learn-preferences.mjs';
 
 let pass = 0;
 let fail = 0;
@@ -113,6 +114,38 @@ eq('先に締切切れを消してから数を削る', prune([
   { title: '有効A' },
   { title: '有効B' },
 ], { limit: 2 }).map((r) => r.title), ['有効A', '有効B']);
+
+console.log('\n── 学習: 採用・却下から好みを取り出す ──');
+eq('N-gramを2〜3文字で取る', ngrams('還元').sort(), ['還元']);
+ok('3文字も取る', ngrams('エアドロップ').includes('エアド'));
+ok('数字は語にしない', !ngrams('20%還元').some((g) => /\d/.test(g)));
+
+const learned = learnWeights(
+  // 正例: サウナ関連を採用してきた
+  ['サウナ新店オープン', 'サウナ施設が開業', 'サウナととのい体験', 'サウナ新規オープン', '新サウナ登場'],
+  // 負例: 仮想通貨を却下してきた
+  ['仮想通貨キャンペーン', '仮想通貨エアドロップ', '仮想通貨の配布', '仮想通貨上場記念', '仮想通貨プレゼント'],
+  { minCount: 2, maxTerms: 100 },
+);
+const wOf = (t) => learned.find((w) => w.term === t)?.weight ?? 0;
+ok('採用側の語は正の重み', wOf('サウナ') > 0);
+ok('却下側の語は負の重み', wOf('仮想通') < 0);
+ok('重みは上限内に収まる', learned.every((w) => Math.abs(w.weight) <= 3));
+
+console.log('\n── 学習がスコアに乗るか ──');
+setLearned(learned);
+const liked = score({ title: 'サウナが新規オープンします', category: 'おでかけ', url: 'https://e.com/1' });
+const disliked = score({ title: '仮想通貨のキャンペーンを開始', category: 'お金', url: 'https://e.com/2' });
+ok('好む語を含む方が上', liked.total > disliked.total);
+ok('理由に過去の傾向が出る', liked.reasons.some((r) => r.includes('過去の傾向')));
+
+// 好みで「終了しました」を救い上げてはいけない
+const endedButLiked = score({ title: 'サウナのキャンペーンは終了しました', category: 'おでかけ', url: 'https://e.com/3' });
+ok('好む語があっても終了済みは負のまま', endedButLiked.total < 0);
+setLearned(null);
+
+const noLearn = score({ title: 'サウナが新規オープンします', category: 'おでかけ', url: 'https://e.com/1' });
+ok('学習結果が無くても動く', noLearn.total > 0 && !noLearn.reasons.some((r) => r.includes('過去の傾向')));
 
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);
