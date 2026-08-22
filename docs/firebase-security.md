@@ -25,16 +25,36 @@
    - `yokottinnn.github.io`
    - `localhost`（手元で試すとき用）
 
-### 2. アプリを更新して、自分の uid を調べる
+### 2. 3アカウントぶんの uid を調べる
 
 `index.html` は Google サインイン対応済み。デプロイ後に公開サイトを開き、
-サインインしてから DevTools のコンソールで:
+**3アカウントそれぞれで**サインインして uid を控える。
+
+対象:
+
+- n-yokota@fieldbeside.com
+- tacseigaku@gmail.com
+- daredemosanka@gmail.com
+
+各アカウントでサインインしたあと、DevTools のコンソールで:
 
 ```js
 firebase.auth().currentUser.uid
 ```
 
-出てきた文字列が**あなたの uid**。控える。
+次のアカウントに移るときは、いったんサインアウトする:
+
+```js
+firebase.auth().signOut()
+```
+
+3つとも控えたら次へ。**どれでログインしても見えるデータは同じ**
+（`users/yokota` 配下）。アカウントごとに中身が分かれるわけではない。
+
+> `n-yokota@fieldbeside.com` は Google Workspace のアカウント。
+> 組織側でサードパーティアプリへのサインインが制限されていると失敗する。
+> その場合はエラー文を確認する。他の2つは通るはずなので、
+> Workspace の1つを諦めても運用はできる。
 
 ### 3. バッチ用の認証情報を取る
 
@@ -69,8 +89,14 @@ ls -lh ~/bubblesnow-backup-*.json
 
 ### 5. ルールを適用する
 
-`firebase/database.rules.json` の **`OWNER_UID` を手順2の uid に置き換えてから**、
-Firebase Console → Realtime Database → **ルール** に貼り付けて公開。
+`firebase/database.rules.json` の **`UID_1` / `UID_2` / `UID_3` を手順2で控えた
+3つの uid に置き換えてから**、Firebase Console → Realtime Database → **ルール**
+に貼り付けて公開。
+
+**置き換え漏れがあると、その uid では入れなくなる。** 貼る前に `UID_` の文字列が
+残っていないか検索して確かめること。
+
+あとから増やす・減らすのはこの1行を書き換えるだけ。データの移行もアプリの改修も要らない。
 
 ### 6. 確認する
 
