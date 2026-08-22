@@ -369,6 +369,44 @@ var unsub4=Storage.subscribe("users/yokota/dismissedTitles",function(data){if(da
 return function(){unsub();unsub2();unsub3();unsub4();};
 },[]);
 var save=useCallback(function(nt){sT(nt);Storage.set("users/yokota/tasks",nt);},[]);
+
+/* ★inbox を取り込む★
+   iOS ショートカットはブラウザを開かず Firebase の REST に直接 POST する。
+   ページを経由しないので認証状態を持てず、代わりにショートカット内の
+   シークレットで書く。POST は push キーを作るため、tasks（配列）に
+   直接足すと配列がオブジェクトに変わってアプリの前提が壊れる。
+   そこで受け口を users/yokota/inbox に分け、アプリを開いたときに
+   tasks へ移して inbox を空にする。
+
+   取り込みは「開いたとき」だけでよい。表示するのはこのアプリなので、
+   見た時点で入っていれば足りる。 */
+useEffect(function(){
+  if(!loaded||!db)return;
+  db.ref("users/yokota/inbox").once("value").then(function(snap){
+    var v=snap.val();
+    if(!v)return;
+    var incoming=(Array.isArray(v)?v:Object.values(v)).filter(function(t){return t&&t.name;});
+    if(!incoming.length){db.ref("users/yokota/inbox").remove();return;}
+    var norm=incoming.map(function(t){
+      return {
+        id:t.id||("t"+Date.now()+Math.floor(Math.random()*1000)),
+        name:String(t.name),
+        category:t.category||"その他",
+        detail:t.detail||"",merit:t.merit||"",demerit:t.demerit||"",
+        deadline:t.deadline||"",priority:t.priority||"🟡中",
+        url:t.url||"",location:t.location||"",note:t.note||"",
+        icon:t.icon||"",status:t.status||"active",wip:false,
+        createdAt:t.createdAt||new Date().toISOString()
+      };
+    });
+    /* 先に tasks へ書いてから inbox を消す。順番を逆にすると、
+       書き込みに失敗したときタスクが消える。 */
+    var merged=tasks.concat(norm);
+    Storage.set("users/yokota/tasks",merged);
+    sT(merged);
+    db.ref("users/yokota/inbox").remove();
+  }).catch(function(){/* 取り込めなくてもアプリは使える */});
+},[loaded]);
 var addFromRec=function(r){
 var t={id:"t"+Date.now(),name:r.title,category:r.category,detail:r.desc,merit:"",demerit:"",deadline:r.deadline||"",priority:r.priority||"🟡中",url:r.url||"",location:r.location||"",note:"おすすめから追加",icon:r.icon,status:"active",wip:false};
 save(tasks.concat([t]));
