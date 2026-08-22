@@ -2,6 +2,7 @@
 <style>body{background:#0f0c29;color:#fff;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:20px}.w{max-width:340px}.s{width:22px;height:22px;border:2px solid rgba(255,255,255,.15);border-top-color:#845EF7;border-radius:50%;animation:s .5s linear infinite;margin:0 auto 10px}@keyframes s{to{transform:rotate(360deg)}}.ok{font-size:48px;margin-bottom:10px}.nm{font-size:16px;font-weight:700;margin-bottom:6px}.t{font-size:11px;color:rgba(255,255,255,.4);line-height:1.8}.tag{display:inline-block;padding:2px 8px;border-radius:8px;margin:2px;font-size:10px}.c1{background:rgba(132,94,247,.15);color:#b794f6}.c2{background:rgba(255,212,59,.15);color:#ffd43b}.c3{background:rgba(255,169,77,.15);color:#ffa94d}</style>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 </head>
 <body><div class="w" id="m"><div class="s"></div><div style="font-size:14px">タスク追加中...</div></div>
 <script>
@@ -9,8 +10,23 @@
 /* add.html の Make.com webhook 依存をなくし、Firebase に直接書き込む版。
    クエリの受け口は add.html と同一なので、iOSショートカット等は URL を
    add.html → add-direct.html に差し替えるだけで移行できる。
-   recs.html と同様 databaseURL のみで初期化する（APIキーを置かない）。 */
-firebase.initializeApp({databaseURL:"https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app"});
+
+   ★認証が要るようになった★
+   DB を認証必須に締めるので、ここも Google サインイン済みでないと書けない。
+   ただしこのページは iOS ショートカットから開かれる。毎回サインインを
+   求めては使い物にならないので、本体アプリでサインイン済みのセッションを
+   そのまま使う（Firebase Auth は同じオリジンに保存される）。
+   未サインインのときだけボタンを出す。
+
+   Auth を使うので databaseURL だけでなく apiKey / authDomain も要る。
+   apiKey は秘密ではなく、どのプロジェクトかを示す識別子。
+   守るのはルール側の uid 照合であって、この値ではない。 */
+firebase.initializeApp({
+  apiKey:"AIzaSyBvWy2zxQRazmGJWU0-NEaw2wxxpb1WkJU",
+  authDomain:"nydaytodo-e0f20.firebaseapp.com",
+  databaseURL:"https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:"nydaytodo-e0f20"
+});
 var db=firebase.database();
 
 var p=Object.fromEntries(new URLSearchParams(location.search));
@@ -29,6 +45,20 @@ var el=document.getElementById("m");
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 
+function showSignIn(msg){
+  el.innerHTML='<div style="font-size:40px;margin-bottom:12px">🔒</div>'+
+    '<div style="font-size:14px;margin-bottom:6px">ログインが必要です</div>'+
+    (msg?'<div class="t" style="margin-bottom:12px">'+esc(msg)+'</div>':'')+
+    '<button id="si" style="padding:12px 20px;border-radius:10px;border:none;background:#fff;color:#1f1f1f;font-size:14px;font-weight:600">Google でログイン</button>'+
+    '<div class="t" style="margin-top:14px">ログイン後、このタスクの追加は自動で続きます</div>';
+  document.getElementById("si").onclick=function(){
+    /* ショートカットから開かれるのでリダイレクト方式に倒す。
+       戻ってきたときクエリは保持されるので、そのまま追加処理へ進む。 */
+    firebase.auth().signInWithRedirect(new firebase.auth.GoogleAuthProvider());
+  };
+}
+
+function run(){
 if(!data.name){
   el.innerHTML="⚠️ タスク名がありません";
 }else{
@@ -75,4 +105,12 @@ if(!data.name){
       '<div style="margin-top:16px;font-size:12px;color:rgba(255,255,255,.3)">このページを閉じてOKです</div>';
   });
 }
+}
+
+/* サインイン状態が確定してから動かす。確定前に書くと権限エラーになる。 */
+firebase.auth().getRedirectResult().catch(function(e){showSignIn(e.message||String(e));});
+firebase.auth().onAuthStateChanged(function(user){
+  if(user)run();
+  else showSignIn("");
+});
 </script></body></html>

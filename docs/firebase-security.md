@@ -83,14 +83,21 @@ curl -s "https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.a
 # {"error":"Permission denied"} が返れば成功
 ```
 
-## 残る作業
+## 補助ページの扱い
 
-`add-direct.html` / `recs.html` / `cleanup.html` も認証なしで書いている。
-ルールを締めると**これらは動かなくなる**。
+| ファイル | 状態 |
+|---|---|
+| `add-direct.html` | ✅ 対応済み。サインイン済みセッションを使い、未サインインならボタンを出す |
+| `recs.html` | Make.com の受け皿だったので**もう不要**。削除候補 |
+| `cleanup.html` | メンテ用。締めると動かなくなるが、使うときに直せばよい |
 
-- `add-direct.html` は iOS ショートカットから叩かれるので、対応が要る
-- `recs.html` は Make.com の受け皿だったので、もう不要（削除候補）
-- `cleanup.html` はメンテ用。必要なときだけ使う
+`add-direct.html` は iOS ショートカットから開かれるため、毎回サインインを
+求めない作りにしてある。Firebase Auth のセッションは同じオリジンに保存されるので、
+本体アプリでサインインしていれば黙って通る。**そのため、ショートカットを使う
+ブラウザで一度は本体アプリにサインインしておくこと。**
+
+未サインインのときはボタンを出し、リダイレクトで戻ってきたあと
+クエリが保持されているのでそのまま追加処理に進む。
 
 ## secret が漏れたら
 
