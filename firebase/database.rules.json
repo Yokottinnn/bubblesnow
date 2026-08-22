@@ -1,0 +1,34 @@
+{
+  "rules": {
+    "//": [
+      "★誰でも読み書きできる状態を閉じるためのルール★",
+      "これまで users/yokota/* は認証なしで読み書きできた。タスクには確定申告・通院・",
+      "冠婚葬祭が含まれ、DBのURLはアプリの公開ソースに書かれているので、",
+      "URLを知る誰でも読めた。アプリのログイン画面は文字列比較の目隠しでしかなく、",
+      "Firebase には何も伝わっていなかった。",
+      "",
+      "OWNER_UID は Google サインインしたときの uid に置き換える。",
+      "取り方は docs/firebase-security.md を参照。",
+      "",
+      "バッチ（Mac の launchd）は REST に ?auth=<database secret> を付けて叩く。",
+      "secret はルールを迂回する管理者権限なので、mac/.env にだけ置く。"
+    ],
+
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === 'OWNER_UID'",
+        ".write": "auth != null && auth.uid === 'OWNER_UID'",
+
+        "tasks": {
+          ".validate": "newData.hasChildren() || newData.val() === null"
+        },
+        "recommendations": {
+          ".validate": "newData.hasChildren() || newData.val() === null"
+        }
+      }
+    },
+
+    ".read": false,
+    ".write": false
+  }
+}
