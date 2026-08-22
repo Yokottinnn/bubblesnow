@@ -1,3 +1,8 @@
 mac/.env
 mac/logs/
 node_modules/
+collected-x.json
+collected-sources.json
+recs-built-preview.json
+recs-generated-preview.json
+recs-backup.json
