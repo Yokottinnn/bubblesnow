@@ -52,6 +52,17 @@ if ! node scripts/collect-x.mjs; then
   exit 1
 fi
 
+# ── ①' Gmail から収集 ──
+# 未設定なら丸ごと飛ばす。X だけでも成立するので、ここで止めない。
+if [ -n "${GMAIL_REFRESH_TOKENS:-}" ]; then
+  echo ""
+  echo "--- ①' Gmail から収集 ---"
+  node scripts/collect-gmail.mjs || echo "  ⚠️ Gmail の収集に失敗しました。X の材料だけで続けます"
+else
+  echo ""
+  echo "--- ①' Gmail は未設定のため省略（docs/gmail-setup.md）---"
+fi
+
 # ── ②' 学習 ──
 # 昨日までの採用・却下から好みを学び直す。失敗しても選別は続ける
 # （学習は「あれば効く」もので、無くても手書きの重みで動く）。

@@ -41,7 +41,7 @@ const MAX_PER_CATEGORY = Number(process.env.MAX_PER_CATEGORY || 8);
 // 一覧をスクロールして眺められる量として 60 を既定にした。
 const MAX_TOTAL = Number(process.env.MAX_TOTAL || 60);
 
-const SOURCE_FILES = ['collected-x.json', 'collected-sources.json'];
+const SOURCE_FILES = ['collected-x.json', 'collected-sources.json', 'collected-gmail.json'];
 // learn-preferences.mjs が書き出す学習結果。無ければ手書きの重みだけで動く。
 const WEIGHTS_FILE = 'learned-weights.json';
 // 学習分がスコア全体を支配しないための上限。手書きの信号は「行動できるか」を
@@ -183,7 +183,7 @@ export function toRec(item) {
     title,
     desc: strip(item.desc || item.title).slice(0, 120),
     category: CATEGORIES.includes(item.category) ? item.category : 'その他',
-    source: item.via === 'search' || item.via === 'profile' ? 'x' : 'news',
+    source: item.via === 'gmail' ? 'gmail' : (item.via === 'search' || item.via === 'profile' ? 'x' : 'news'),
     icon: item.icon || '📌',
     priority: PRIORITIES.includes(priority) ? priority : '🟡中',
     deadline,
