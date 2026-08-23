@@ -69,6 +69,12 @@ const rec = toRec({
 eq('HTMLタグを除去し空白を畳む', rec.title, 'タグ入り タイトル');
 eq('不正なカテゴリは その他 に落とす', rec.category, 'その他');
 eq('http で始まらない url は空', rec.url, '');
+eq('message: は Gmail の iOS メールアプリ向けリンクとして許可する',
+  toRec({ title: 'メール件名', url: 'message:%3Cid%40mail.gmail.com%3E', via: 'gmail' }).url,
+  'message:%3Cid%40mail.gmail.com%3E');
+eq('javascript: のような未知のスキームは通さない',
+  toRec({ title: 'x', url: 'javascript:alert(1)', via: 'search' }).url,
+  '');
 eq('icon 未指定は既定値', rec.icon, '📌');
 eq('X由来は source=x', rec.source, 'x');
 eq('RSS由来は source=news', toRec({ title: 'あいうえおかきくけこ', via: 'rss' }).source, 'news');

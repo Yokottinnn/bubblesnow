@@ -187,7 +187,10 @@ export function toRec(item) {
     icon: item.icon || '📌',
     priority: PRIORITIES.includes(priority) ? priority : '🟡中',
     deadline,
-    url: String(item.url || '').startsWith('http') ? item.url : '',
+    // http(s) は通常のリンク。message: は Gmail 由来を iOS の「メール」アプリで
+    // 直接開くための Message-ID リンク（collect-gmail.mjs 参照）。それ以外の
+    // スキーム（javascript: など）は許可しない。
+    url: /^(https?|message):/.test(String(item.url || '')) ? item.url : '',
     location: strip(item.location || ''),
   };
 }
