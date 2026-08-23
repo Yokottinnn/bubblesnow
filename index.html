@@ -233,7 +233,7 @@ var INIT_RECS=[
 {id:"r22",title:"Bright Data SERP API テスト",desc:"SERP APIエンドポイント準備完了。テスト実行してみる",category:"キャリア・学び",source:"gmail",icon:"🔍",priority:"🟢低",deadline:"2026-04-30",url:"https://brightdata.com/"}
 ];
 function RecommendTab(p){
-var recs=p.recs;var onAdd=p.onAdd;var onDismiss=p.onDismiss;var added=p.added;var dismissed=p.dismissed;var dismissedTitles=p.dismissedTitles||[];var allTasks=p.allTasks||[];
+var recs=p.recs;var onAdd=p.onAdd;var onDismiss=p.onDismiss;var added=p.added;var dismissed=p.dismissed;var dismissedTitles=p.dismissedTitles||[];var allTasks=p.allTasks||[];var refreshMsg=p.refreshMsg||"";
 var SRC={gmail:{label:"📧 Gmail",bg:"rgba(66,133,244,.15)",color:"#4285F4"},calendar:{label:"📅 カレンダー",bg:"rgba(66,133,244,.15)",color:"#4285F4"},news:{label:"📰 ニュース",bg:"rgba(255,169,77,.15)",color:"#FFA94D"},x:{label:"🕊️ X",bg:"rgba(255,255,255,.1)",color:"#aaa"},instagram:{label:"📸 Instagram",bg:"rgba(225,48,108,.15)",color:"#E1306C"},line:{label:"💬 LINE",bg:"rgba(6,199,85,.15)",color:"#06C755"},trend:{label:"🔮 トレンド",bg:"rgba(132,94,247,.15)",color:"#845EF7"}};
 var taskNames=allTasks.map(function(t){return t.name.replace(/\n/g,"");});
 var visible=recs.filter(function(r){var titleLower=r.title?r.title.trim().toLowerCase():"";var titleDismissed=dismissedTitles.some(function(dt){if(!dt)return false;if(dt===titleLower)return true;var shorter=dt.length<=titleLower.length?dt:titleLower;if(shorter.length<6)return false;return titleLower.indexOf(dt)>=0||dt.indexOf(titleLower)>=0;});return dismissed.indexOf(r.id)<0&&added.indexOf(r.id)<0&&taskNames.indexOf(r.title)<0&&!titleDismissed;});
@@ -253,6 +253,7 @@ h("button",{onClick:p.onSwitchTab,style:{width:30,height:30,borderRadius:8,borde
 h("button",{onClick:p.refreshing?void 0:p.onRefresh||function(){},style:{width:30,height:30,borderRadius:8,border:"1px solid rgba(132,94,247,.3)",background:"rgba(132,94,247,.1)",color:"#B197FC",fontSize:16,cursor:p.refreshing?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",animation:p.refreshing?"spin .8s linear infinite":"none",opacity:p.refreshing?.5:1}},"🔄")
 )
 ),
+refreshMsg?h("div",{style:{textAlign:"center",fontSize:12,color:"rgba(255,255,255,.55)",padding:"6px 0 0"}},refreshMsg):null,
 visible.length===0?h("div",{style:{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",color:"rgba(255,255,255,.3)",padding:40}},h("div",{style:{fontSize:48,marginBottom:10}},"✨"),h("div",{style:{fontSize:15}},"新しいおすすめはありません")):
 h("div",{style:{flex:1,overflow:"auto",padding:"10px 16px 20px",scrollbarWidth:"none"}},
 visible.map(function(r){
@@ -419,18 +420,29 @@ sAdded(added.concat([r.id]));
 };
 var dismissRec=function(rid){var rec=recs.find(function(r){return r.id===rid;});var nd=dismissed.concat([rid]);sDismissed(nd);Storage.set("users/yokota/dismissed",nd);if(rec&&rec.title){var ndt=dismissedTitles.concat([rec.title.trim().toLowerCase()]);sDismissedTitles(ndt);Storage.set("users/yokota/dismissedTitles",ndt);}};
 var _refreshing=useState(false),refreshing=_refreshing[0],sRefreshing=_refreshing[1];
+var _refreshMsg=useState(""),refreshMsg=_refreshMsg[0],sRefreshMsg=_refreshMsg[1];
 var doRefresh=function(){
 sRefreshing(true);
+sRefreshMsg("");
 /* Make.com webhook はやめた。recs の生成は GitHub Actions (daily-recs.yml) の仕事で、
    このボタンは Firebase の最新を読み直すだけ。webhook の返事を待つための3秒も不要になった。
    なお元の webhook 呼び出しは .catch で握りつぶしていたため、Make.com が recs を
-   更新しなくなった後もエラーは一切出ず、押しても何も起きない状態が続いていた。 */
-if(db){db.ref("users/yokota/recommendations").once("value").then(function(snap){var d=snap.val();var arr=extractRecs(d);if(arr&&arr.length>0)sRecs(sanitizeRecs(arr));sRefreshing(false);}).catch(function(){sRefreshing(false);});}else{sRefreshing(false);}
+   更新しなくなった後もエラーは一切出ず、押しても何も起きない状態が続いていた。
+   2026-08-23: Firebase の読み直し自体は数百msで終わるため、スピンアニメーションが
+   一瞬すぎて「押しても何も起きない」ように見えていた。最低表示時間を作り、
+   完了後に短いメッセージを出して「動いた」ことが分かるようにする。 */
+var minSpin=new Promise(function(res){setTimeout(res,500);});
+var fetchP=db?db.ref("users/yokota/recommendations").once("value").then(function(snap){var d=snap.val();var arr=extractRecs(d);if(arr&&arr.length>0)sRecs(sanitizeRecs(arr));return true;}).catch(function(){return false;}):Promise.resolve(false);
+Promise.all([fetchP,minSpin]).then(function(r){
+  sRefreshing(false);
+  sRefreshMsg(r[0]?"✓ 更新しました":"更新に失敗しました");
+  setTimeout(function(){sRefreshMsg("");},1800);
+});
 };
 return h("div",{style:{position:"fixed",inset:0,display:"flex",flexDirection:"column",background:"linear-gradient(135deg,#0f0c29 0%,#1a1a3a 40%,#24243e 100%)",fontFamily:"'Outfit','Noto Sans JP',sans-serif",overflow:"hidden"}},
 /* Content - with bottom padding for footer */
 h("div",{style:{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}},
-tab==="tasks"?h(TaskApp,{tasks:tasks,setTasks:sT,loaded:loaded,save:save,onSwitchTab:function(){setTab("recommend");}})  :h(RecommendTab,{recs:recs,onAdd:addFromRec,onDismiss:dismissRec,added:added,dismissed:dismissed,dismissedTitles:dismissedTitles,allTasks:tasks,onRefresh:doRefresh,refreshing:refreshing,onSwitchTab:function(){setTab("tasks");}})
+tab==="tasks"?h(TaskApp,{tasks:tasks,setTasks:sT,loaded:loaded,save:save,onSwitchTab:function(){setTab("recommend");}})  :h(RecommendTab,{recs:recs,onAdd:addFromRec,onDismiss:dismissRec,added:added,dismissed:dismissed,dismissedTitles:dismissedTitles,allTasks:tasks,onRefresh:doRefresh,refreshing:refreshing,refreshMsg:refreshMsg,onSwitchTab:function(){setTab("tasks");}})
 )
 );
 }
