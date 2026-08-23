@@ -75,7 +75,13 @@ async function api(path, token) {
   const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error(`Gmail API ${path.split('?')[0]} failed: ${res.status}`);
+  if (!res.ok) {
+    // エラーの reason（insufficientPermissions 等）は個人情報ではないので出す。
+    // メール内容は一切含まれない。
+    let reason = '';
+    try { reason = (await res.json())?.error?.errors?.[0]?.reason || ''; } catch { /* ignore */ }
+    throw new Error(`Gmail API ${path.split('?')[0]} failed: ${res.status}${reason ? ` (${reason})` : ''}`);
+  }
   return res.json();
 }
 
