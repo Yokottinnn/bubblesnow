@@ -87,6 +87,9 @@ console.log('\n── ID採番: 既存の続きから振る ──');
 eq('最大値+1から', assignIds([{ title: 'a' }, { title: 'b' }], [{ id: 'r246' }, { id: 'r254' }]).map((r) => r.id), ['r255', 'r256']);
 eq('既存が空なら r1 から', assignIds([{ title: 'a' }], []).map((r) => r.id), ['r1']);
 eq('rNNN 以外の id は無視', assignIds([{ title: 'a' }], [{ id: 'weird' }]).map((r) => r.id), ['r1']);
+eq('却下済みで recommendations から消えた id も踏まえて番号を巻き戻さない',
+  assignIds([{ title: 'a' }], [{ id: 'r5' }], ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r20']).map((r) => r.id),
+  ['r21']);
 
 console.log('\n── 溜まらないようにする ──');
 const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);

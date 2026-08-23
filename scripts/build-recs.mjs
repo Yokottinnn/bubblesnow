@@ -205,12 +205,19 @@ export function isDismissed(title, dismissedTitles) {
   });
 }
 
-export function assignIds(recs, existing) {
+// 2026-08-23 実機確認: max を「今 recommendations に残っている id」だけから
+// 求めると、却下・採用されて recommendations から消えた id が数に入らず、
+// カウンタが巻き戻る。dismissed は一度入ったら消えない台帳なので、そちらも
+// 合わせて見ることで巻き戻りを防ぐ（巻き戻ると新しい rec が過去の
+// dismissed id と衝突し、フロント側で「既出」判定されて無限に0件表示になる）。
+export function assignIds(recs, existing, dismissedIds = []) {
   let max = 0;
-  for (const r of existing) {
-    const m = String(r?.id || '').match(/^r(\d+)$/);
+  const scan = (id) => {
+    const m = String(id || '').match(/^r(\d+)$/);
     if (m) max = Math.max(max, parseInt(m[1], 10));
-  }
+  };
+  for (const r of existing) scan(r?.id);
+  for (const id of dismissedIds) scan(id);
   let next = max + 1;
   return recs.map((r) => ({ id: `r${next++}`, ...r }));
 }
@@ -278,6 +285,7 @@ async function main() {
   const existingRaw = (await fbGet(`${BASE}/recommendations`).catch(() => [])) || [];
   const existing = Array.isArray(existingRaw) ? existingRaw.filter(Boolean) : [];
   const dismissedTitles = (await fbGet(`${BASE}/dismissedTitles`).catch(() => [])) || [];
+  const dismissedIds = (await fbGet(`${BASE}/dismissed`).catch(() => [])) || [];
   const tasks = (await fbGet(`${BASE}/tasks`).catch(() => [])) || [];
   const taskNames = (Array.isArray(tasks) ? tasks : Object.values(tasks))
     .filter(Boolean).map((t) => norm(t.name));
@@ -329,7 +337,7 @@ async function main() {
   console.log('');
 
   const recs = picked.map((s) => toRec(s.item)).filter((r) => r.title);
-  const withIds = assignIds(recs, existing);
+  const withIds = assignIds(recs, existing, dismissedIds);
 
   await writeFile('recs-built-preview.json', JSON.stringify(withIds, null, 2));
   console.log(`📦 recs-built-preview.json に ${withIds.length}件を保存`);
