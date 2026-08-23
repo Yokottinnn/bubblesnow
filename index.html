@@ -61,10 +61,10 @@ var h=React.createElement,useState=React.useState,useEffect=React.useEffect,useR
 var FIREBASE_CONFIG={apiKey:"AIzaSyBvWy2zxQRazmGJWU0-NEaw2wxxpb1WkJU",authDomain:"nydaytodo-e0f20.firebaseapp.com",databaseURL:"https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"nydaytodo-e0f20",storageBucket:"nydaytodo-e0f20.firebasestorage.app",messagingSenderId:"984429193076",appId:"1:984429193076:web:ce12b11df5d9914039ee21"};
 var db=null;try{firebase.initializeApp(FIREBASE_CONFIG);db=firebase.database();}catch(e){}
 var Storage={subscribe:function(k,cb){if(db){var r=db.ref(k);r.on("value",function(s){cb(s.val());});return function(){r.off("value");};}else{try{cb(JSON.parse(localStorage.getItem(k)));}catch(e){cb(null);}return function(){};}},set:function(k,v){if(db)db.ref(k).set(v).catch(function(e){
-  /* 2026-08-23: ここで握りつぶすと「ボタンを押しても何も起きない」バグが
-     再現しても原因が分からない（過去に doRefresh で同じパターンで実害が出た）。
-     失敗を可視化するための一時的な alert。原因が分かったら消す。 */
-  alert("保存に失敗しました: "+(e&&e.message||e)+"\npath="+k);
+  /* 2026-08-23: 前は catch(function(){}) で完全に握りつぶしていた。
+     doRefresh で一度同じパターンにより「押しても何も起きない」原因不明
+     バグを出しているので、最低限 console には残す。 */
+  console.error("Firebase write failed:",k,e&&e.message||e);
 });else try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
 /* CREDS は廃止。認証は Firebase Auth（Google サインイン）に移した。
    公開ソースに書いたパスワードは秘密として機能しないため。 */
