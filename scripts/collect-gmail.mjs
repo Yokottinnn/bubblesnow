@@ -96,10 +96,14 @@ function toItem(msg) {
   return { subject, snippet, bulk: Boolean(listUnsub), id: msg.id };
 }
 
-// 配信元の URL を取り出す。rec には行き先が要る。
-function findUrl(snippet) {
-  const m = String(snippet).match(/https?:\/\/[^\s"'<>]{10,}/);
-  return m ? m[0] : '';
+// Gmail 上でそのメールを直接開く URL。
+// スニペットからの正規表現抽出（findUrl）は途中で切れたり不完全なことがあるので、
+// タスク化したときにタップして開く先は「元メールそのもの」に統一する。
+// authuser にメールアドレスを指定しておけば、他のアカウントでサインイン中でも
+// Gmail 側が正しいアカウントに切り替えてくれる。
+function gmailUrl(email, id) {
+  const auth = email ? `?authuser=${encodeURIComponent(email)}` : '';
+  return `https://mail.google.com/mail/${auth}#all/${id}`;
 }
 
 function keep(item) {
@@ -135,7 +139,7 @@ async function collectAccount(refreshToken, index) {
       icon: '📧',
       title: item.subject.slice(0, 60),
       desc: item.snippet.slice(0, 120),
-      url: findUrl(item.snippet),
+      url: gmailUrl(profile.emailAddress, item.id),
       via: 'gmail',
     });
   }
@@ -198,4 +202,4 @@ async function main() {
 const invoked = (process.argv[1] || '').split('/').pop();
 if (invoked === 'collect-gmail.mjs') main().catch((e) => { console.error('❌ 失敗:', e); process.exit(1); });
 
-export { keep, findUrl, QUERY };
+export { keep, gmailUrl, QUERY };
