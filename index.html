@@ -413,8 +413,10 @@ useEffect(function(){
     db.ref("users/yokota/inbox").remove();
   }).catch(function(){/* 取り込めなくてもアプリは使える */});
 },[loaded]);
+var SRC_LABEL={gmail:"Gmail",calendar:"カレンダー",news:"ニュース",x:"X",instagram:"Instagram",line:"LINE",trend:"トレンド"};
 var addFromRec=function(r){
-var t={id:"t"+Date.now(),name:r.title,category:r.category,detail:r.desc,merit:"",demerit:"",deadline:r.deadline||"",priority:r.priority||"🟡中",url:r.url||"",location:r.location||"",note:"おすすめから追加",icon:r.icon,status:"active",wip:false};
+var srcLabel=SRC_LABEL[r.via||r.source];
+var t={id:"t"+Date.now(),name:r.title,category:r.category,detail:r.desc,merit:"",demerit:"",deadline:r.deadline||"",priority:r.priority||"🟡中",url:r.url||"",location:r.location||"",note:srcLabel?"おすすめから追加（"+srcLabel+"）":"おすすめから追加",icon:r.icon,status:"active",wip:false};
 save(tasks.concat([t]));
 sAdded(added.concat([r.id]));
 };
