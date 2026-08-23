@@ -60,7 +60,12 @@ window.onerror=function(msg){var el=document.getElementById("loading-msg");if(el
 var h=React.createElement,useState=React.useState,useEffect=React.useEffect,useRef=React.useRef,useCallback=React.useCallback,useMemo=React.useMemo;
 var FIREBASE_CONFIG={apiKey:"AIzaSyBvWy2zxQRazmGJWU0-NEaw2wxxpb1WkJU",authDomain:"nydaytodo-e0f20.firebaseapp.com",databaseURL:"https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"nydaytodo-e0f20",storageBucket:"nydaytodo-e0f20.firebasestorage.app",messagingSenderId:"984429193076",appId:"1:984429193076:web:ce12b11df5d9914039ee21"};
 var db=null;try{firebase.initializeApp(FIREBASE_CONFIG);db=firebase.database();}catch(e){}
-var Storage={subscribe:function(k,cb){if(db){var r=db.ref(k);r.on("value",function(s){cb(s.val());});return function(){r.off("value");};}else{try{cb(JSON.parse(localStorage.getItem(k)));}catch(e){cb(null);}return function(){};}},set:function(k,v){if(db)db.ref(k).set(v).catch(function(){});else try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
+var Storage={subscribe:function(k,cb){if(db){var r=db.ref(k);r.on("value",function(s){cb(s.val());});return function(){r.off("value");};}else{try{cb(JSON.parse(localStorage.getItem(k)));}catch(e){cb(null);}return function(){};}},set:function(k,v){if(db)db.ref(k).set(v).catch(function(e){
+  /* 2026-08-23: ここで握りつぶすと「ボタンを押しても何も起きない」バグが
+     再現しても原因が分からない（過去に doRefresh で同じパターンで実害が出た）。
+     失敗を可視化するための一時的な alert。原因が分かったら消す。 */
+  alert("保存に失敗しました: "+(e&&e.message||e)+"\npath="+k);
+});else try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
 /* CREDS は廃止。認証は Firebase Auth（Google サインイン）に移した。
    公開ソースに書いたパスワードは秘密として機能しないため。 */
 var CC={"契約・手続き":{bg:"#FF6B6B",glow:"rgba(255,107,107,.4)",text:"#fff"},"お金":{bg:"#FFD43B",glow:"rgba(255,212,59,.4)",text:"#333"},"ヘルスケア":{bg:"#51CF66",glow:"rgba(81,207,102,.4)",text:"#fff"},"グルメ":{bg:"#FFA94D",glow:"rgba(255,169,77,.4)",text:"#fff"},"ショッピング":{bg:"#F06595",glow:"rgba(240,101,149,.4)",text:"#fff"},"おでかけ":{bg:"#20C997",glow:"rgba(32,201,151,.4)",text:"#fff"},"キャリア・学び":{bg:"#5C85E0",glow:"rgba(92,133,224,.4)",text:"#fff"},"ヒト":{bg:"#E599F7",glow:"rgba(229,153,247,.4)",text:"#fff"},"その他":{bg:"#845EF7",glow:"rgba(132,94,247,.4)",text:"#fff"}};
