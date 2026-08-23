@@ -93,17 +93,28 @@ function toItem(msg) {
   const subject = header(msg, 'Subject').replace(/\s+/g, ' ').trim();
   const snippet = String(msg.snippet || '').replace(/\s+/g, ' ').trim();
   const listUnsub = header(msg, 'List-Unsubscribe');
-  return { subject, snippet, bulk: Boolean(listUnsub), id: msg.id };
+  const messageId = header(msg, 'Message-ID').trim();
+  return { subject, snippet, bulk: Boolean(listUnsub), id: msg.id, messageId };
 }
 
-// Gmail 上でそのメールを直接開く URL。
-// スニペットからの正規表現抽出（findUrl）は途中で切れたり不完全なことがあるので、
+// Gmail の Web 版を開く URL（フォールバック用）。
+// スニペットからの正規表現抽出（旧 findUrl）は途中で切れたり不完全なことがあるので、
 // タスク化したときにタップして開く先は「元メールそのもの」に統一する。
 // authuser にメールアドレスを指定しておけば、他のアカウントでサインイン中でも
 // Gmail 側が正しいアカウントに切り替えてくれる。
 function gmailUrl(email, id) {
   const auth = email ? `?authuser=${encodeURIComponent(email)}` : '';
   return `https://mail.google.com/mail/${auth}#all/${id}`;
+}
+
+// iOS 標準の「メール」アプリでそのメールを直接開く URL。
+// Gmail アプリ自体には特定の1通を指定して開く公式リンク形式が無い
+// （googlegmail:// は受信トレイを開くだけ）。iOS 標準メールが対応している
+// message: スキームなら Message-ID ヘッダーで直接開ける。
+// ただし対象アカウントが iOS の「メール」アプリ（IMAP）側にも登録されている
+// ことが前提（登録されていなければ開けない）。
+function mailAppUrl(messageId) {
+  return messageId ? `message:${encodeURIComponent(messageId)}` : '';
 }
 
 function keep(item) {
@@ -128,7 +139,7 @@ async function collectAccount(refreshToken, index) {
 
   const items = [];
   for (const id of ids) {
-    const msg = await api(`messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=List-Unsubscribe`, token)
+    const msg = await api(`messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=List-Unsubscribe&metadataHeaders=Message-ID`, token)
       .catch(() => null);
     if (!msg) continue;
     const item = toItem(msg);
@@ -139,7 +150,7 @@ async function collectAccount(refreshToken, index) {
       icon: '📧',
       title: item.subject.slice(0, 60),
       desc: item.snippet.slice(0, 120),
-      url: gmailUrl(profile.emailAddress, item.id),
+      url: mailAppUrl(item.messageId) || gmailUrl(profile.emailAddress, item.id),
       via: 'gmail',
     });
   }
@@ -202,4 +213,4 @@ async function main() {
 const invoked = (process.argv[1] || '').split('/').pop();
 if (invoked === 'collect-gmail.mjs') main().catch((e) => { console.error('❌ 失敗:', e); process.exit(1); });
 
-export { keep, gmailUrl, QUERY };
+export { keep, gmailUrl, mailAppUrl, QUERY };

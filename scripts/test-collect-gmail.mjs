@@ -2,7 +2,7 @@
 //
 // 実行: node scripts/test-collect-gmail.mjs
 
-import { keep, gmailUrl, QUERY } from './collect-gmail.mjs';
+import { keep, gmailUrl, mailAppUrl, QUERY } from './collect-gmail.mjs';
 
 let pass = 0;
 let fail = 0;
@@ -22,6 +22,14 @@ eq('メールアドレスを authuser に付けてメール本体へ飛ぶ',
 eq('メールアドレスが取れないときは authuser を省く',
   gmailUrl('', '18d1f2a3b4c5d6e7'),
   'https://mail.google.com/mail/#all/18d1f2a3b4c5d6e7');
+
+console.log('\n── iOS メールアプリの message: リンク生成 ──');
+eq('Message-ID をそのまま URL エンコードして message: を付ける',
+  mailAppUrl('<CAOU_x123@mail.gmail.com>'),
+  'message:%3CCAOU_x123%40mail.gmail.com%3E');
+eq('Message-ID が無ければ空文字（呼び出し側で gmailUrl にフォールバック）',
+  mailAppUrl(''),
+  '');
 
 console.log('\n── 一斉配信メールだけを対象にする（既存の判定を壊していないか） ──');
 ok('検索条件は promotions カテゴリ限定のまま', QUERY.includes('category:promotions'));
