@@ -212,9 +212,20 @@ function withinAge(createdAt) {
   return (Date.now() - t) / 86400000 <= MAX_AGE_DAYS;
 }
 
+// 装飾絵文字・記号だけの行（"🎪08.23(sun)°🌙 •┈˙˚ʚ♡ɞ˚˙┈• 再掲" のような）は
+// 文字数はあっても中身が無い。日付の数字などが混じると単純な文字数閾値だけでは
+// すり抜けるので、文字・数字（漢字仮名含む）が行全体の半分以上を占めることも要求する。
+const meaningfulLen = (s) => (s.match(/[\p{L}\p{N}]/gu) || []).length;
+const isMeaningfulLine = (s) => {
+  const ml = meaningfulLen(s);
+  return ml >= 6 && ml / s.length >= 0.5;
+};
+
 // 投稿本文はそのままだと rec のタイトルに長すぎる。1行目を見出しとして使う。
-function toTitle(text) {
-  const first = text.split('\n').map((s) => s.trim()).find((s) => s.length >= 6) || text.trim();
+// ただし装飾だけの行は飛ばして、内容のある行を探す。
+export function toTitle(text) {
+  const lines = text.split('\n').map((s) => s.trim());
+  const first = lines.find(isMeaningfulLine) || lines.find((s) => s.length >= 6) || text.trim();
   return first.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
 }
 
@@ -319,4 +330,5 @@ async function main() {
 
 const pick = (t) => ({ key: t.key, category: t.category, icon: t.icon });
 
-main().catch((e) => { console.error('❌ 失敗:', e); process.exit(1); });
+const invoked = (process.argv[1] || '').split('/').pop();
+if (invoked === 'collect-x.mjs') main().catch((e) => { console.error('❌ 失敗:', e); process.exit(1); });
