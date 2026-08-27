@@ -70,6 +70,115 @@ async function fbPut(path, data) {
 const norm = (s) => String(s || '').toLowerCase().replace(/[\s　"'“”‘’|｜・,、。．.!！?？]/g, '');
 const strip = (s) => String(s ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 
+// ★見出し・詳細のノイズ除去（LLM不使用）★
+// 実データを見ると、装飾行の除去（collect-x.mjs）だけでは足りない問題が
+// 2つあった。
+//   1. メールの宛名（「横田 尚己 様」等）がそのまま詳細欄に出る
+//   2. 「画像が表示されない場合はこちら」等、内容と無関係な定型文が
+//      文字数を食い、120字に切ると本題に届く前に終わる
+// どちらも文面のパターンなので、規則ベースで削れる範囲は削る。
+
+// HTML実体参照。収集元によっては未デコードのまま来る（"&mall" のような
+// 中途半端な壊れ方をすることがある＝&amp;mall の "amp;" 部分が既に
+// どこかで欠けている、等）。
+export const decodeEntities = (s) => String(s)
+  .replace(/&amp;/g, '&')
+  .replace(/&quot;/g, '"')
+  .replace(/&#39;/g, '\'')
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/&nbsp;/g, ' ');
+
+// 「〇〇 △△ 様」形式の宛名。スペース区切りの短い語の並びが 様 で終わる
+// ときだけ対象にする（"お客様"「皆様」のような一語の敬称はスペースが
+// 無いので対象外＝誤って本文を壊さない）。
+const SALUTATION = /(?<=^|[\s　])[^\s　、。！？「」『』]{1,10}(?:[ 　][^\s　、。！？「」『』]{1,10}){0,1}[ 　]様/g;
+// 「(株式会社|合同会社)+人名+様」形式（スペースが無いパターン）。
+// 法人格の文字列という明確な目印があるときだけ対象にする。
+const COMPANY_SALUTATION = /[^\s　、。！？「」『』]{0,20}(?:株式会社|合同会社|㈱)[^\s　、。！？「」『』]{1,20}様/g;
+
+// メール本文に頻出する、案内内容そのものとは無関係な定型文。
+const BOILERPLATE = [
+  /※?(正しく|画像が)表示されない場合は[^\s　]{0,15}こちら[^\s　]{0,10}/g,
+  /※.{0,3}このメールは.{0,40}/g,
+  /配信停止(はこちら)?.{0,10}/g,
+  /・?\s*【本メールについて】/g,
+  /・?\s*本メールに心当たりが(ない|無い)方は[^。]{0,40}。?/g,
+  /・?\s*本メールは、?[^。]{0,60}。?/g,
+  /この度の.{0,20}(地震|災害|台風).{0,80}お見舞い申し上げます。?/g,
+  /TOPICS\s*TOPICS/g,
+  /Have a good Cashless\.?/gi,
+  /(株式会社|合同会社)[^\s　]{1,20}(セミナー事務局|事務局|担当)です。?/g,
+  /\b\d{4}\.\d{1,2}\.\d{1,2}\b/g,
+];
+
+export function cleanText(s) {
+  let t = decodeEntities(String(s || ''));
+  t = t.replace(COMPANY_SALUTATION, '').replace(SALUTATION, '');
+  for (const re of BOILERPLATE) t = t.replace(re, '');
+  // 定型文除去のあとに箇条書きの「・」だけが孤立して残ることがある。
+  t = t.replace(/(?<=^|[\s　])・(?=[\s　]|$)/g, '');
+  return t.replace(/[ 　]{2,}/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// 文字数で機械的に切ると単語の途中で終わる（"そんなあな" 等）。
+// 句点・感嘆符・疑問符があればそこで切り、無ければ空白で切る。
+// どちらも無いときだけ、最後の手段として文字数で切る。
+// 「【」「「」のような開き括弧だけが末尾に残ると尻切れに見える
+// （"…ハッカソン、【" のような）ので、切ったあとに落とす。
+const stripDanglingOpenBracket = (s) => s.replace(/[「『【([（\s　]+$/, '');
+
+export function truncateAtBoundary(s, maxLen) {
+  const t = String(s || '');
+  if (t.length <= maxLen) return t;
+  const head = t.slice(0, maxLen);
+  const lastSentenceEnd = Math.max(head.lastIndexOf('。'), head.lastIndexOf('！'), head.lastIndexOf('？'));
+  if (lastSentenceEnd >= Math.floor(maxLen * 0.4)) return head.slice(0, lastSentenceEnd + 1);
+  const lastComma = head.lastIndexOf('、');
+  const lastSpace = head.lastIndexOf(' ');
+  const cut = Math.max(lastComma, lastSpace);
+  if (cut >= Math.floor(maxLen * 0.4)) return stripDanglingOpenBracket(head.slice(0, cut + (cut === lastComma ? 1 : 0)).trim());
+  return stripDanglingOpenBracket(head).trim() || head;
+}
+
+// ★見出しをタスク形式にする（LLM不使用）★
+// 収集元の文言をそのまま見出しにすると「〇〇キャンペーン開催中！」のような
+// 告知文のままで、タスク一覧に並んだときに「何をすればいいか」が読めない。
+// 内容の理解や言い換えはできない（LLM無しの制約）ので、代わりに
+// 「すでに動詞で終わっている文はそのまま」「そうでなければ内容に合う
+// 動詞を機械的に付け足す」という形式面だけの変換に留める。
+// 語尾の直後に絵文字（「お急ぎください💨」等）が付くことがあるので、
+// 文字列の末尾ぴったりではなく末尾付近を対象にする。
+const TASK_VERB_ENDING = /(する|しよう|しましょう|よう|くる|いく|やる|使う|使おう|申し込む|エントリーする|登録する|参加する|確認する|チェックする|手に入れよう|ください|下さい)/;
+const isTaskLikeEnding = (t) => TASK_VERB_ENDING.test(t.slice(-12));
+const TERMINAL_PUNCT = /[！!。.？?…]$/;
+const TASK_VERBS = [
+  { re: /エントリー/, verb: 'にエントリーする' },
+  { re: /(応募|申[込し]み?)/, verb: 'に応募する' },
+  { re: /登録/, verb: 'に登録する' },
+  { re: /(クーポン|割引|還元|ポイント)/, verb: 'を使う' },
+  { re: /(開催|セミナー|イベント|ハッカソン|勉強会|講座)/, verb: 'に参加する' },
+];
+const TASK_VERB_DEFAULT = 'をチェックする';
+
+export function toTaskTitle(title, desc) {
+  const t = String(title || '').trim();
+  if (!t || isTaskLikeEnding(t)) return t;
+  const combined = `${t} ${desc || ''}`;
+  const hit = TASK_VERBS.find((v) => v.re.test(combined));
+  const verb = hit ? hit.verb : TASK_VERB_DEFAULT;
+  // 動詞と括弧ぶんの余白を引いた範囲で、文の切れ目（句点・空白）を
+  // 優先してタイトルの核を切り出す。単語の途中で切って動詞を続けると
+  // 「...ハッカソン、【 Entertainmeに参加する」のような壊れ方をする。
+  const core = truncateAtBoundary(t, Math.max(60 - verb.length - 2, 10));
+  if (TERMINAL_PUNCT.test(core)) {
+    // 文として完結している（「〜！」等）ので、そのまま動詞を続けると
+    // 文法的に破綻する。見出し全体を主語として括弧でくくる。
+    return `「${core}」${verb}`;
+  }
+  return `${core}${verb}`;
+}
+
 // ★スコアリング★
 // 「タスク追加傾向を増やしdismiss傾向を減らす」が元プロンプトの狙い。
 // LLM の代わりに、その狙いを分解可能な形にして数値で表す。
@@ -171,7 +280,8 @@ export function extractDeadline(text) {
 }
 
 export function toRec(item) {
-  const title = strip(item.title).slice(0, 60);
+  const rawTitle = decodeEntities(strip(item.title));
+  const title = toTaskTitle(rawTitle, item.desc).slice(0, 60);
   const deadline = extractDeadline(`${item.title} ${item.desc || ''}`);
   // 期限が近いものだけ上げる。全部を🔴にすると優先度が意味を失う。
   let priority = '🟡中';
@@ -179,9 +289,12 @@ export function toRec(item) {
     const days = (Date.parse(deadline) - Date.now()) / 86400000;
     priority = days <= 7 ? '🔴期限迫' : '🟡中';
   }
+  // 定型文除去でほぼ空になることがある（本文の大半が宛名・注意書きだった場合）。
+  // 空の詳細欄を出すより、タイトルを見出しとして繰り返す方がまだ分かる。
+  const cleanedDesc = truncateAtBoundary(cleanText(strip(item.desc || item.title)), 120);
   return {
     title,
-    desc: strip(item.desc || item.title).slice(0, 120),
+    desc: cleanedDesc.length >= 4 ? cleanedDesc : title,
     category: CATEGORIES.includes(item.category) ? item.category : 'その他',
     source: item.via === 'gmail' ? 'gmail' : (item.via === 'search' || item.via === 'profile' ? 'x' : 'news'),
     icon: item.icon || '📌',

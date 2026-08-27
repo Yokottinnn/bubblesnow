@@ -226,7 +226,24 @@ const isMeaningfulLine = (s) => {
 export function toTitle(text) {
   const lines = text.split('\n').map((s) => s.trim());
   const first = lines.find(isMeaningfulLine) || lines.find((s) => s.length >= 6) || text.trim();
-  return first.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  // 60字ではなく90字まで残す。build-recs.mjs 側で「〜を確認する」のような
+  // タスク形式の動詞を足すため、素材に少し余白を持たせておく。
+  return first.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim().slice(0, 90);
+}
+
+// 以前は desc を作っていなかったため、rec の「詳細」欄はタイトルの
+// コピーになっていた（=中身が無い）。投稿本文の全行（見出しに使った行も
+// 含む）を URL 抜きで並べたものを渡す。長さの調整・整形は build-recs.mjs
+// 側で行う（ここでは素材をなるべく残す）。
+export function toDesc(text) {
+  return String(text)
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 async function main() {
@@ -264,7 +281,7 @@ async function main() {
           if (!key || seen.has(key)) continue;
           if (!topic.must.some((w) => it.text.includes(w))) continue;
           seen.add(key);
-          collected.push({ ...pick(topic), title, url: `https://x.com/i/status/${it.id}`, via: 'search', likes: it.likes });
+          collected.push({ ...pick(topic), title, desc: toDesc(it.text), url: `https://x.com/i/status/${it.id}`, via: 'search', likes: it.likes });
           viaSearch += 1;
         }
       }
@@ -279,7 +296,7 @@ async function main() {
         if (!key || seen.has(key)) continue;
         if (!topic.must.some((w) => it.text.includes(w))) continue;
         seen.add(key);
-        collected.push({ ...pick(topic), title, url: `https://x.com/${handle}/status/${it.id}`, via: 'profile', likes: 0 });
+        collected.push({ ...pick(topic), title, desc: toDesc(it.text), url: `https://x.com/${handle}/status/${it.id}`, via: 'profile', likes: 0 });
         viaProfile += 1;
       }
     }

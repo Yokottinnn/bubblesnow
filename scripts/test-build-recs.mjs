@@ -6,7 +6,7 @@
 //
 // 実行: node scripts/test-build-recs.mjs
 
-import { score, extractDeadline, toRec, isDismissed, assignIds, prune, setLearned } from './build-recs.mjs';
+import { score, extractDeadline, toRec, isDismissed, assignIds, prune, setLearned, cleanText, truncateAtBoundary, decodeEntities, toTaskTitle } from './build-recs.mjs';
 import { learnWeights, ngrams } from './learn-preferences.mjs';
 
 let pass = 0;
@@ -66,7 +66,7 @@ const rec = toRec({
   icon: '',
   via: 'search',
 });
-eq('HTMLタグを除去し空白を畳む', rec.title, 'タグ入り タイトル');
+eq('HTMLタグを除去し空白を畳む（+タスク形式の動詞が付く）', rec.title, 'タグ入り タイトルをチェックする');
 eq('不正なカテゴリは その他 に落とす', rec.category, 'その他');
 eq('http で始まらない url は空', rec.url, '');
 eq('message: は Gmail の iOS メールアプリ向けリンクとして許可する',
@@ -75,6 +75,64 @@ eq('message: は Gmail の iOS メールアプリ向けリンクとして許可�
 eq('javascript: のような未知のスキームは通さない',
   toRec({ title: 'x', url: 'javascript:alert(1)', via: 'search' }).url,
   '');
+
+console.log('\n── 整形: 詳細文からノイズを削る（メールの宛名・定型文） ──');
+eq('HTML実体参照をデコードする', decodeEntities('A&amp;B &quot;test&quot;'), 'A&B "test"');
+eq('スペース区切りの宛名（実在しそうな人名）を削る',
+  cleanText('新着情報です 横田 尚己 様 メンバーズプログラム'),
+  '新着情報です メンバーズプログラム');
+eq('一語の敬称（お客様・皆様）は削らない',
+  cleanText('お客様には日頃よりご愛顧いただき、皆様に感謝申し上げます。'),
+  'お客様には日頃よりご愛顧いただき、皆様に感謝申し上げます。');
+eq('法人格+人名+様（スペース無し）の宛名を削る',
+  cleanText('Fieldbeside合同会社横田尚己様 お世話になっております。'),
+  'お世話になっております。');
+eq('「画像が表示されない場合はこちら」等の定型文を削る',
+  cleanText('クーポン配布中 ※画像が表示されない場合はこちらから確認 今すぐチェック'),
+  'クーポン配布中 今すぐチェック');
+eq('句点があれば句点で切る（単語の途中で切らない）',
+  truncateAtBoundary('最大20%還元キャンペーン開催中。詳細はこちらのページからご確認いただけます。', 20),
+  '最大20%還元キャンペーン開催中。');
+eq('句点が無ければ空白で切る',
+  truncateAtBoundary('最大20%還元 キャンペーン開催中 詳細はこちら', 12),
+  '最大20%還元');
+eq('句点も空白も使える位置に無ければ文字数で切る',
+  truncateAtBoundary('あいうえおかきくけこさしすせそ', 10),
+  'あいうえおかきくけこ');
+eq('元の長さが上限以下ならそのまま', truncateAtBoundary('短い文', 20), '短い文');
+eq('toRec の desc はノイズ除去してから整形される',
+  toRec({ title: 'x', desc: '横田 尚己 様 最大20%還元キャンペーン開催中。詳細はこちら', via: 'gmail' }).desc,
+  '最大20%還元キャンペーン開催中。詳細はこちら');
+eq('「本メールについて」の注意書きブロックを削る',
+  cleanText('【本メールについて】 ・本メールに心当たりがない方はお手数ですが削除くださいますようお願いいたします。 ・本メールは、会員のお客様にお送りしております。 今週のおすすめ商品をご紹介！'),
+  '今週のおすすめ商品をご紹介！');
+eq('定型文除去で詳細がほぼ空になったら（タスク形式の）タイトルで埋める',
+  toRec({ title: 'キャンペーンのお知らせ', desc: '【本メールについて】 ・本メールに心当たりがない方はお手数ですが削除くださいますようお願いいたします。', via: 'gmail' }).desc,
+  'キャンペーンのお知らせをチェックする');
+
+console.log('\n── 見出しをタスク形式にする ──');
+eq('すでに動詞で終わる見出しはそのまま',
+  toTaskTitle('今月貯めた・使ったポイントを確認する', ''),
+  '今月貯めた・使ったポイントを確認する');
+eq('意志形（〜しよう！）もタスク的とみなしそのまま',
+  toTaskTitle('ポイントを手に入れよう！', ''),
+  'ポイントを手に入れよう！');
+eq('文が完結している告知文は括弧でくくって動詞を足す',
+  toTaskTitle('🎉 毎週報酬を受け取れる！', ''),
+  '「🎉 毎週報酬を受け取れる！」をチェックする');
+eq('「エントリー」を含む名詞句には「にエントリーする」を足す',
+  toTaskTitle('夏のボーナスキャンペーン エントリー受付中', ''),
+  '夏のボーナスキャンペーン エントリー受付中にエントリーする');
+eq('「クーポン」を含む名詞句には「を使う」を足す',
+  toTaskTitle('Vクーポン・Vミッションがリニューアル【2026年8月号】', ''),
+  'Vクーポン・Vミッションがリニューアル【2026年8月号】を使う');
+eq('該当する語が無ければ「をチェックする」で汎用的に締める',
+  toTaskTitle('サウナメッツァ大井町 3/28', 'サウナシュラン1位おおたか竜泉寺の湯の新業態'),
+  'サウナメッツァ大井町 3/28をチェックする');
+eq('タイトル自体に無くても desc の語も見て動詞を選ぶ',
+  toTaskTitle('楽天モバイルの方', '最大20%OFFクーポン配布中'),
+  '楽天モバイルの方を使う');
+eq('空タイトルは空のまま', toTaskTitle('', ''), '');
 eq('icon 未指定は既定値', rec.icon, '📌');
 eq('X由来は source=x', rec.source, 'x');
 eq('RSS由来は source=news', toRec({ title: 'あいうえおかきくけこ', via: 'rss' }).source, 'news');

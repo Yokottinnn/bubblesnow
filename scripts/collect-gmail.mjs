@@ -148,8 +148,12 @@ async function collectAccount(refreshToken, index) {
       key: 'メール',
       category: 'お金',
       icon: '📧',
-      title: item.subject.slice(0, 60),
-      desc: item.snippet.slice(0, 120),
+      // build-recs.mjs 側で「〜を確認する」のようなタスク形式の動詞を
+      // 足す余白として、60字ではなく90字まで残す。
+      title: item.subject.slice(0, 90),
+      // 120 文字での事前カットはやめた。定型文除去・文単位での整形は
+      // build-recs.mjs 側でまとめて行うので、ここでは切り詰めずに渡す。
+      desc: item.snippet,
       url: mailAppUrl(item.messageId) || gmailUrl(profile.emailAddress, item.id),
       via: 'gmail',
     });
