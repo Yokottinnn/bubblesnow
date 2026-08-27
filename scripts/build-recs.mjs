@@ -96,6 +96,12 @@ const SALUTATION = /(?<=^|[\s　])[^\s　、。！？「」『』]{1,10}(?:[ 　
 // 「(株式会社|合同会社)+人名+様」形式（スペースが無いパターン）。
 // 法人格の文字列という明確な目印があるときだけ対象にする。
 const COMPANY_SALUTATION = /[^\s　、。！？「」『』]{0,20}(?:株式会社|合同会社|㈱)[^\s　、。！？「」『』]{1,20}様/g;
+// 「横田尚己様」のように会社名もスペースも無い宛名（実在のメールで確認済み。
+// SALUTATION はスペース区切りが前提のため素通りしていた）。漢字・カナが
+// 2〜8字続いて 様 に直結する箇所を対象にする。「お客様」「皆様」のような
+// 一般的な敬称は本名ではないので除外リストで残す。
+const GENERIC_SAMA = /^(お客様|皆様|各位様|会員様|ご担当者様|関係者様|保護者様|ご利用者様|ご契約者様)$/;
+const PLAIN_SALUTATION = /(?<=^|[\s　、。！？「』])[一-龥ァ-ヶー]{2,8}様/g;
 
 // メール本文に頻出する、案内内容そのものとは無関係な定型文。
 const BOILERPLATE = [
@@ -112,9 +118,15 @@ const BOILERPLATE = [
   /\b\d{4}\.\d{1,2}\.\d{1,2}\b/g,
 ];
 
+// ゼロ幅スペース等の不可視文字。\s に含まれないため放置すると宛名の
+// 手前に残り、SALUTATION 系の正規表現の「行頭/空白の直後」判定を
+// すり抜ける（実データで発生を確認）。整形の最初に必ず取り除く。
+const INVISIBLE = /[​‌‍﻿]/g;
+
 export function cleanText(s) {
-  let t = decodeEntities(String(s || ''));
-  t = t.replace(COMPANY_SALUTATION, '').replace(SALUTATION, '');
+  let t = decodeEntities(String(s || '')).replace(INVISIBLE, '');
+  t = t.replace(COMPANY_SALUTATION, '').replace(SALUTATION, '')
+    .replace(PLAIN_SALUTATION, (m) => (GENERIC_SAMA.test(m) ? m : ''));
   for (const re of BOILERPLATE) t = t.replace(re, '');
   // 定型文除去のあとに箇条書きの「・」だけが孤立して残ることがある。
   t = t.replace(/(?<=^|[\s　])・(?=[\s　]|$)/g, '');
@@ -128,17 +140,36 @@ export function cleanText(s) {
 // （"…ハッカソン、【" のような）ので、切ったあとに落とす。
 const stripDanglingOpenBracket = (s) => s.replace(/[「『【([（\s　]+$/, '');
 
+// 末尾の記号だけでなく「「ウイルテック」のように、開き括弧の後ろに
+// 固有名詞などが続いた状態で切れることもある。対応が取れていない
+// 開き括弧があれば、その手前まで戻す（＝開いたまま終わる引用・カッコを
+// 見出しに残さない）。
+const OPEN_BRACKETS = '「『【([（';
+const CLOSE_BRACKETS = '」』】)]）';
+function trimUnclosedBracket(s) {
+  const stack = [];
+  for (let i = 0; i < s.length; i++) {
+    if (OPEN_BRACKETS.includes(s[i])) stack.push(i);
+    else if (CLOSE_BRACKETS.includes(s[i]) && stack.length) stack.pop();
+  }
+  return stack.length ? s.slice(0, stack[0]).trim() : s;
+}
+
 export function truncateAtBoundary(s, maxLen) {
   const t = String(s || '');
   if (t.length <= maxLen) return t;
   const head = t.slice(0, maxLen);
   const lastSentenceEnd = Math.max(head.lastIndexOf('。'), head.lastIndexOf('！'), head.lastIndexOf('？'));
-  if (lastSentenceEnd >= Math.floor(maxLen * 0.4)) return head.slice(0, lastSentenceEnd + 1);
+  if (lastSentenceEnd >= Math.floor(maxLen * 0.4)) return trimUnclosedBracket(head.slice(0, lastSentenceEnd + 1));
   const lastComma = head.lastIndexOf('、');
   const lastSpace = head.lastIndexOf(' ');
   const cut = Math.max(lastComma, lastSpace);
-  if (cut >= Math.floor(maxLen * 0.4)) return stripDanglingOpenBracket(head.slice(0, cut + (cut === lastComma ? 1 : 0)).trim());
-  return stripDanglingOpenBracket(head).trim() || head;
+  if (cut >= Math.floor(maxLen * 0.4)) {
+    const trimmed = stripDanglingOpenBracket(head.slice(0, cut + (cut === lastComma ? 1 : 0)).trim());
+    return trimUnclosedBracket(trimmed) || trimmed;
+  }
+  const trimmed = stripDanglingOpenBracket(head).trim() || head;
+  return trimUnclosedBracket(trimmed) || trimmed;
 }
 
 // ★見出しをタスク形式にする（LLM不使用）★
@@ -152,12 +183,22 @@ export function truncateAtBoundary(s, maxLen) {
 const TASK_VERB_ENDING = /(する|しよう|しましょう|よう|くる|いく|やる|使う|使おう|申し込む|エントリーする|登録する|参加する|確認する|チェックする|手に入れよう|ください|下さい)/;
 const isTaskLikeEnding = (t) => TASK_VERB_ENDING.test(t.slice(-12));
 const TERMINAL_PUNCT = /[！!。.？?…]$/;
+// titleOnly: true の語は、タイトル自身にその語が無いと動詞をつなげても
+// 意味が通らない（「クーポン」が desc にしか無いのに見出しに「を使う」を
+// 足すと、何を使うのか分からなくなる＝実際に "楽天モバイルの方を使う"
+// のような壊れ方をした）。desc だけの一致で足してもまだ意味が壊れにくい
+// 語（還元・ポイント・開催系）だけ titleOnly: false にしている。
 const TASK_VERBS = [
-  { re: /エントリー/, verb: 'にエントリーする' },
-  { re: /(応募|申[込し]み?)/, verb: 'に応募する' },
-  { re: /登録/, verb: 'に登録する' },
-  { re: /(クーポン|割引|還元|ポイント)/, verb: 'を使う' },
-  { re: /(開催|セミナー|イベント|ハッカソン|勉強会|講座)/, verb: 'に参加する' },
+  { re: /エントリー/, verb: 'にエントリーする', titleOnly: true },
+  { re: /(応募|申[込し]み)/, verb: 'に応募する', titleOnly: true },
+  { re: /登録/, verb: 'に登録する', titleOnly: true },
+  { re: /予約/, verb: 'を予約する', titleOnly: true },
+  { re: /(購入|購読)/, verb: 'を検討する', titleOnly: true },
+  { re: /(クーポン|割引)/, verb: 'を使う', titleOnly: true },
+  { re: /(無料体験|お試し)/, verb: 'を試す', titleOnly: true },
+  { re: /(抽選|プレゼント|配布)/, verb: 'に応募する', titleOnly: false },
+  { re: /(還元|ポイント)/, verb: 'を確認する', titleOnly: false },
+  { re: /(開催|セミナー|イベント|ハッカソン|勉強会|講座)/, verb: 'に参加する', titleOnly: false },
 ];
 const TASK_VERB_DEFAULT = 'をチェックする';
 
@@ -165,7 +206,7 @@ export function toTaskTitle(title, desc) {
   const t = String(title || '').trim();
   if (!t || isTaskLikeEnding(t)) return t;
   const combined = `${t} ${desc || ''}`;
-  const hit = TASK_VERBS.find((v) => v.re.test(combined));
+  const hit = TASK_VERBS.find((v) => v.re.test(v.titleOnly ? t : combined));
   const verb = hit ? hit.verb : TASK_VERB_DEFAULT;
   // 動詞と括弧ぶんの余白を引いた範囲で、文の切れ目（句点・空白）を
   // 優先してタイトルの核を切り出す。単語の途中で切って動詞を続けると
