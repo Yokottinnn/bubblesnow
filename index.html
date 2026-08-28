@@ -131,15 +131,16 @@ return h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center
 /* 締切バッジの文言。
    近いうちは「今日」「明日」「あとN日」の方が直感的だが、
    遠い日付を「あと87日」と出されても日付が分からない。
-   1週間を超えたら 261123 のような6桁（YYMMDD）で実日付を出す。
-   1週間で切るのは、アプリの「soon」フィルタが締切7日以内だから。 */
+   1週間を超えたら「26年11月23日」の形で実日付を出す。
+   1週間で切るのは、アプリの「soon」フィルタが締切7日以内だから。
+   月日の先頭ゼロは落とす（06月→6月）。バッジは幅が限られるので短いほどよい。 */
 function dlLabel(dl,deadline){
 if(dl<0)return "期限切れ";
 if(dl===0)return "今日";
 if(dl===1)return "明日";
 if(dl<=7)return "あと"+dl+"日";
 var m=String(deadline||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-return m?m[1].slice(2)+m[2]+m[3]:"あと"+dl+"日";
+return m?m[1].slice(2)+"年"+Number(m[2])+"月"+Number(m[3])+"日":"あと"+dl+"日";
 }
 
 function FloatingBubble(p){var task=p.task,idx=p.index,tc=p.totalCount,cRef=p.containerRef;var elRef=useRef(null);var ltRef=useRef(0);var ttRef=useRef(null);var tRef=useRef(false);var iRef=useRef({drag:false,pinch:false,moved:false,ts:0,sd:0,ss:1,ox:0,oy:0,sp:{x:0,y:0}});var _h=useState(null),hint=_h[0],sH=_h[1];var sc=PS[task.priority]||1;var sz=B*sc;var co=CC[task.category]||CC["その他"];var dl=dL(task.deadline);var bid="b_"+task.id;
