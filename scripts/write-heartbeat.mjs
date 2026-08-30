@@ -76,6 +76,14 @@ function jst(d = new Date()) {
 
 const n = (v) => (v === null || v === undefined ? '不明' : String(v));
 
+/* 経過時間を読める形に。日次バッチは 00:00 に走るので、日中に手で
+   確かめると 20 時間超になる。「0 日前」では何も伝わらない。 */
+function age(hours) {
+  if (hours === null || hours === undefined) return '時期不明';
+  if (hours < 48) return `${Math.round(hours)} 時間前`;
+  return `${Math.floor(hours / 24)} 日前`;
+}
+
 async function main() {
   const status = process.env.HEARTBEAT_STATUS || '不明';
   const mode = process.env.HEARTBEAT_MODE || '不明';
@@ -97,8 +105,8 @@ async function main() {
       gmailLine = '未設定のため省略（docs/gmail-setup.md）';
     } else if (gmail && gmailMeta.stale) {
       // 前回のファイルが残っているだけ。件数を書くと今日の成果に見えるので書かない。
-      const days = gmailMeta.ageH === null ? '?' : Math.floor(gmailMeta.ageH / 24);
-      gmailLine = `⚠️ 今回は採れず（残っているのは ${days} 日前のファイル）`;
+      // 「日」で丸めると 23 時間前が「0 日前」になって意味が通らない。時間で書く。
+      gmailLine = `⚠️ 今回は採れず（残っているのは ${age(gmailMeta.ageH)}のファイル）`;
     } else {
       gmailLine = '⚠️ 今回は採れず（collected-gmail.json が無い）';
     }
