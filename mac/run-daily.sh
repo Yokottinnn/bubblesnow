@@ -38,12 +38,13 @@ MODE="${RECS_MODE:-live}"
 # 出すのは件数だけ。中身は書かない（public リポジトリのため）。
 # 失敗した実行こそ知りたいので、途中で落ちても EXIT で必ず通る。
 STATUS="中断（原因不明）"
+GMAIL_WARN=""
 heartbeat() {
   # trap は cd より前に仕掛けてある（cd 自体が失敗した場合も記録したいため）ので、
   # ここで自力でリポジトリに入る。入れないなら何もしない。
   cd "$REPO" 2>/dev/null || return 0
 
-  HEARTBEAT_STATUS="$STATUS" \
+  HEARTBEAT_STATUS="${STATUS}${GMAIL_WARN}" \
   HEARTBEAT_MODE="$MODE" \
   HEARTBEAT_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
     node scripts/write-heartbeat.mjs || true
@@ -105,7 +106,16 @@ fi
 if [ -n "${GMAIL_REFRESH_TOKENS:-}" ]; then
   echo ""
   echo "--- ①' Gmail から収集 ---"
-  node scripts/collect-gmail.mjs || echo "  ⚠️ Gmail の収集に失敗しました。X の材料だけで続けます"
+  if ! node scripts/collect-gmail.mjs; then
+    # 続行はする（X だけでも成立する）が、黙って続けない。
+    # OAuth 同意画面がテストモードのままだとリフレッシュトークンは7日で切れる。
+    # 切れても日次は「X だけ」で正常終了してしまうので、
+    # ログを読む習慣が無い限り、連携が死んだことに何週間も気づけない。
+    # 心拍の見出しに出して、GitHub を見れば分かる状態にする。
+    GMAIL_WARN="（⚠️ Gmail の収集に失敗）"
+    echo "  ⚠️ Gmail の収集に失敗しました。X の材料だけで続けます"
+    echo "     invalid_grant なら docs/gmail-setup.md「失効したとき」を参照。"
+  fi
 else
   echo ""
   echo "--- ①' Gmail は未設定のため省略（docs/gmail-setup.md）---"
