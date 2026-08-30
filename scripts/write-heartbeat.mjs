@@ -71,7 +71,9 @@ async function main() {
      前者は仕様どおりの省略、後者はトークンの失効を疑う場面で、対応が違う。 */
   let gmailLine;
   if (!gmail) {
-    gmailLine = process.env.GMAIL_REFRESH_TOKENS
+    // 設定の有無は2通りある（IMAP / OAuth）。どちらかがあれば「設定あり」。
+    const configured = process.env.GMAIL_IMAP_ACCOUNTS || process.env.GMAIL_REFRESH_TOKENS;
+    gmailLine = configured
       ? '設定あり・今回は収集できず（collected-gmail.json が無い）'
       : '未設定のため省略（docs/gmail-setup.md）';
   } else {

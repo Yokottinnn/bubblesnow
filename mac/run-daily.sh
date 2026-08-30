@@ -103,10 +103,24 @@ fi
 
 # ── ①' Gmail から収集 ──
 # 未設定なら丸ごと飛ばす。X だけでも成立するので、ここで止めない。
-if [ -n "${GMAIL_REFRESH_TOKENS:-}" ]; then
+#
+# 取り方が2通りある。mac/.env に書いてあるほうが選ばれる。
+#   GMAIL_IMAP_ACCOUNTS  … アプリパスワード + IMAP。トークンが失効しない
+#   GMAIL_REFRESH_TOKENS … OAuth。同意画面がテストモードだと7日で切れる
+# 両方あれば IMAP を使う。切り替えは .env の書き換えだけで済み、
+# 片方が Google 側の都合で使えなくなっても、もう片方に戻せる。
+if [ -n "${GMAIL_IMAP_ACCOUNTS:-}" ]; then
+  GMAIL_SCRIPT="scripts/collect-gmail-imap.mjs"
+elif [ -n "${GMAIL_REFRESH_TOKENS:-}" ]; then
+  GMAIL_SCRIPT="scripts/collect-gmail.mjs"
+else
+  GMAIL_SCRIPT=""
+fi
+
+if [ -n "$GMAIL_SCRIPT" ]; then
   echo ""
-  echo "--- ①' Gmail から収集 ---"
-  if ! node scripts/collect-gmail.mjs; then
+  echo "--- ①' Gmail から収集（$GMAIL_SCRIPT）---"
+  if ! node "$GMAIL_SCRIPT"; then
     # 続行はする（X だけでも成立する）が、黙って続けない。
     # OAuth 同意画面がテストモードのままだとリフレッシュトークンは7日で切れる。
     # 切れても日次は「X だけ」で正常終了してしまうので、
@@ -115,6 +129,7 @@ if [ -n "${GMAIL_REFRESH_TOKENS:-}" ]; then
     GMAIL_WARN="（⚠️ Gmail の収集に失敗）"
     echo "  ⚠️ Gmail の収集に失敗しました。X の材料だけで続けます"
     echo "     invalid_grant なら docs/gmail-setup.md「失効したとき」を参照。"
+    echo "     繰り返すなら、アプリパスワード + IMAP に切り替える手もあります。"
   fi
 else
   echo ""

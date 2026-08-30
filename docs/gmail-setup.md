@@ -164,3 +164,68 @@ Google の **restricted scope（制限付きスコープ）** にあたる。Ext
 
 `mac/last-run.md` の「結果」欄に `（⚠️ Gmail の収集に失敗）` が付く。
 GitHub でこのファイルを見れば、Mac に触らなくても分かる。
+
+---
+
+## 別案: アプリパスワード + IMAP（同意画面も審査も要らない）
+
+OAuth の面倒はほぼ全部「同意画面」から来ている。テストモードなら7日で失効し、
+本番にすれば `gmail.readonly` が restricted scope なので未審査アプリの警告が挟まる。
+**自分の3アカウントを自分の Mac から読むだけ**の用途に、この重さは釣り合っていない。
+
+アプリパスワードなら **失効しない**。取り消すまで有効で、クライアントIDも
+同意画面も審査も要らない。
+
+`scripts/collect-gmail-imap.mjs` がその実装。出力先も形も OAuth 版と同じ
+`collected-gmail.json` なので、`build-recs.mjs` は変更なしで読める。
+判定（`keep()`）は OAuth 版から読み込んで共有している——二重に持つと
+片方だけ緩んで、個人的なメールの件名が公開の rec に載る事故になるため。
+本文は `BODY.PEEK` で読むので **既読にならない**。
+
+### 設定
+
+1. 各アカウントで **2段階認証を有効化**（アプリパスワードの前提）
+2. https://myaccount.google.com/apppasswords で発行（16桁）
+3. `mac/.env` に書く
+
+```bash
+cat >> ~/bubblesnow/mac/.env <<'ENV'
+GMAIL_IMAP_ACCOUNTS=tacseigaku@gmail.com:xxxxxxxxxxxxxxxx,daredemosanka@gmail.com:yyyyyyyyyyyyyyyy,n-yokota@fieldbeside.com:zzzzzzzzzzzzzzzz
+ENV
+```
+
+表示される4桁区切りの空白は入れたままでよい（スクリプトが落とす）。
+
+4. 確かめる
+
+```bash
+cd ~/bubblesnow && set -a && . mac/.env && set +a && node scripts/collect-gmail-imap.mjs
+```
+
+`GMAIL_IMAP_ACCOUNTS` があれば日次バッチは自動で IMAP 版を使う。
+無ければ従来どおり OAuth 版。**両方書いておけば IMAP が優先**され、
+片方が使えなくなっても行を消すだけで戻せる。
+
+### 通らない可能性がある場合
+
+- **2段階認証が無効** — 発行画面自体が出ない。有効にする
+- **Workspace で管理者が禁止している** — `n-yokota@fieldbeside.com` が
+  Workspace ならこれに当たりうる。そのアカウントだけ OAuth 版に残せばよい
+- **Google がこの仕組みを縮小した** — 2026年時点では現役だが、方針は揺れている
+
+3アカウントのうち一部だけ失敗しても、残りで収集は続く。
+全滅したときだけスクリプトが異常終了する（静かに0件にはならない）。
+
+### 検証
+
+Gmail に接続せずにパース部分だけ確かめられる。
+
+```bash
+node scripts/test-collect-gmail-imap.mjs
+```
+
+30ケース。IMAP のリテラル（本文の中に `a5 OK` に見える並びが入っても
+応答の終端を誤判定しないか）、件名のデコード（分割された encoded-word、
+Base64 と Quoted-Printable）、折り返しヘッダー、本文の復号、
+そして `keep()` を OAuth 版と共有できているかを見る。
+**このテストは実際に4つのバグを見つけている**ので、触ったら必ず走らせること。
