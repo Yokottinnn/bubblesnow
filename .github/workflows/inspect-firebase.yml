@@ -28,10 +28,14 @@ jobs:
       # 公開したのは 2026-08-23（ad65d8b）だが、Console で誰かが緩めても
       # アプリ側は正常に見えるため、閉じている証拠は別に取る必要がある。
       # 本文は絶対に出さない（漏れていた場合、ログに中身を書くことになるため）。
+      # shallow=true は orderBy / limitToFirst と併用できず 400 になる。
+      # ここは中身が要らないので shallow だけで足りる（キー名しか返らないうえ、
+      # 応答は捨てている）。この確認に FIREBASE_SECRET は使わない——
+      # 「鍵を持たない相手に何が見えるか」を測るのが目的だから。
       - name: Verify the rules are closed (unauthenticated must be denied)
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' \
-            "$FIREBASE_URL/users/yokota/tasks.json?shallow=true&limitToFirst=1&orderBy=%22%24key%22")
+            "$FIREBASE_URL/users/yokota/tasks.json?shallow=true")
           echo "未認証の読み取り: HTTP $code"
           if [ "$code" = "401" ]; then
             echo "✅ 閉じています（Permission denied）"
@@ -44,8 +48,22 @@ jobs:
             exit 1
           fi
 
+      # ルールを閉じた以上、構造の確認には鍵が要る。鍵は mac/.env にしか無く、
+      # public リポジトリの Secrets には置かない方針なので、ここは通常スキップされる。
+      # 鍵なしで動かすと 401 で落ち、「壊れた」ように見えてしまうため明示的に飛ばす。
+      # 構造を見たいときは Mac 側で同じスクリプトを実行する。
       - name: Inspect structure (read-only)
+        if: env.FIREBASE_SECRET != ''
         run: node scripts/inspect-tasks.mjs
 
       - name: Diagnose recs (read-only)
+        if: env.FIREBASE_SECRET != ''
         run: node scripts/diagnose-recs.mjs
+
+      - name: Note why the read steps were skipped
+        if: env.FIREBASE_SECRET == ''
+        run: |
+          echo "ℹ️ FIREBASE_SECRET が未設定のため、構造の確認はスキップしました。"
+          echo "   ルールが閉じている今、鍵なしでは読めません（それが正しい状態です）。"
+          echo "   構造を見たいときは Mac 側で:"
+          echo "     cd ~/bubblesnow && set -a && . mac/.env && set +a && node scripts/inspect-tasks.mjs"
