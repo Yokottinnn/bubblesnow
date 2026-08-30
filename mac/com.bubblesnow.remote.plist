@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.bubblesnow.remote</string>
+
+  <!-- Claude Code をサーバーモードで常駐させる。
+       スマホ／クラウドのセッションはここに繋いで Mac を動かす。
+       Mac から外向きに接続するので、ポート開放もファイアウォールの変更も要らない。 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__CLAUDE__</string>
+    <string>remote-control</string>
+    <string>--name</string>
+    <string>BubblesNow (Mac)</string>
+    <string>--permission-mode</string>
+    <string>acceptEdits</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+
+  <!-- ログイン時に起動し、落ちたら起こし直す。
+       「気づいたら繋がらない」を無くすのがこの常駐の目的なので KeepAlive は必須。 -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- 起動に失敗し続けるときに秒間ループで CPU を焼かないための間隔 -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>__REPO__/mac/logs/remote.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO__/mac/logs/remote.err.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd の PATH は痩せている。node と claude が見える形にする -->
+    <key>PATH</key>
+    <string>__PATH__</string>
+    <key>HOME</key>
+    <string>__HOME__</string>
+  </dict>
+</dict>
+</plist>

@@ -216,3 +216,54 @@ Actions のログを直接読んで原因を特定できる（GitHub APIには�
 
 - Actions から recs を書くときは `users/yokota/recommendations` を**全置換**で書く点に注意。
   `scripts/push-recs.mjs` は既存を消さず末尾に足すが、`generate-recs.mjs` は置き換える。
+
+---
+
+## Mac を外から動かす（SSH ではなく Remote Control）
+
+### SSH は通らない。壁は Mac ではなくクラウド側にある
+
+2026-08-30 に実測した。`ssh` クライアントは `apt-get install openssh-client` で
+入れられるし、ポート22 も塞がれていない。それでも通らない。
+
+| 宛先 | 結果 |
+|---|---|
+| `api.github.com` | ✅ 200 |
+| `example.com` | ❌ 到達不可 |
+| Firebase | ❌ 到達不可 |
+| `yokottinnn.github.io` | ❌ 到達不可 |
+| `github.com:22` | CONNECT は成功。SSH のバナー交換も成立（43B送信 / 39B受信）。**その後6秒でゲートウェイが切断**（3回とも同じ） |
+
+つまり **許可リストに載っているホストですら非HTTPセッションを維持できない**。
+自宅の Mac は許可リストに載っていないので、CONNECT の時点で 403 になる。
+**sshd を立てても、ルータでポートを開けても、固定IPを取っても、鍵を置いても届かない。**
+
+### Remote Control なら通る
+
+Mac から **外向きに** Anthropic へ繋ぐので、この egress 制限を受けない。
+副次的に、自宅ネットワークに外から入る口を開けずに済むぶん SSH より安全でもある。
+
+```bash
+cd ~/bubblesnow && bash mac/install-remote-control.sh
+```
+
+`claude remote-control`（サーバーモード）を LaunchAgent で常駐させる。
+ログイン時に自動起動し、落ちても `KeepAlive` で起こし直す。
+**前提: Mac の Claude Code で一度 `/login` を済ませていること。**
+未ログインだと `claude remote-control` はエラーで終了する（スクリプトが先に検出する）。
+
+登録すると、スマホや claude.ai/code のセッション一覧に **「BubblesNow (Mac)」** が出る。
+クラウドのセッションからは `create_session` でこの環境にセッションを立てられる。
+
+| | |
+|---|---|
+| 状態を見る | `launchctl print gui/$(id -u)/com.bubblesnow.remote \| head -20` |
+| ログ | `tail -f mac/logs/remote.out.log` |
+| 一時停止 | `launchctl bootout gui/$(id -u)/com.bubblesnow.remote` |
+
+### 常駐していないと何が起きるか
+
+`create_session` は `connection_status: connected` まで進んだあと
+`never_connected`（`recoverable: false`）で落ちる。繋がりかけて落ちるので
+「Mac が寝ている」のか「Claude Code が起動していない」のか紛らわしいが、
+**この症状は後者**。実際 2026-08-30 にこれで Gmail のアカウント数を確認できなかった。
