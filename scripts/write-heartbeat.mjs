@@ -117,6 +117,19 @@ async function main() {
     if (gmail.failures) gmailLine += `（失敗 ${gmail.failures}）`;
   }
 
+  /* 見出しに劣化を出す。
+     2026-08-31 の実行は 3 アカウント中 2 つが失敗したのに、見出しは
+     「正常終了」のままだった。Gmail の行を読めば分かるとはいえ、
+     結果の欄だけ見て健全だと思うのが普通の読み方で、実際そうなりかけた。
+     一部でも落ちていれば見出しに出す。 */
+  const notes = [];
+  if (gmail && !gmailMeta.stale && gmail.failures) {
+    notes.push(`⚠️ Gmail ${gmail.failures}/${n(gmail.accounts)} アカウント失敗`);
+  }
+  if (configured && (!gmail || gmailMeta.stale)) notes.push('⚠️ Gmail 収集できず');
+  if (!x || xMeta.stale) notes.push('⚠️ X 収集できず');
+  const degraded = notes.length ? `　${notes.join(' / ')}` : '';
+
   const body = `# 日次バッチの最終実行
 
 このファイルは \`mac/run-daily.sh\` が毎回上書きします。手で編集しても次の実行で消えます。
@@ -125,7 +138,7 @@ async function main() {
 | | |
 |---|---|
 | 実行 | ${jst()} |
-| 結果 | ${status} |
+| 結果 | ${status}${degraded} |
 | mode | ${mode} |
 | コード | ${sha} |
 

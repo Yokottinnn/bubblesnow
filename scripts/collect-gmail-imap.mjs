@@ -338,13 +338,8 @@ async function main() {
 
   console.log(`\n合計 ${all.length}件（重複除去後）`);
 
-  if (failures === list.length) {
-    console.error('\n❌ 全アカウントで失敗しました。');
-    console.error('   2段階認証が有効か、アプリパスワードが正しいかを確認してください。');
-    console.error('   手順: docs/gmail-setup.md');
-    process.exit(1);
-  }
-
+  // 判定より先に書く。採れた分を捨てず、古いファイルを残さないため
+  // （理由は collect-gmail.mjs の同じ箇所に書いた）。
   // 出力先も形も OAuth 版と同じ。build-recs.mjs は変更なしで読める。
   await writeFile('collected-gmail.json', JSON.stringify({
     collectedAt: new Date().toISOString(),
@@ -353,8 +348,19 @@ async function main() {
     counts: { total: all.length, accounts: list.length, failures },
     items: all,
   }, null, 2));
-
   console.log('📦 collected-gmail.json に保存');
+
+  // 過半数が落ちたら失敗として返す。OAuth 版と同じ規則に揃える。
+  if (failures * 2 > list.length) {
+    console.error(`\n❌ ${list.length}アカウント中 ${failures}件で失敗しました。`);
+    console.error('   2段階認証が有効か、アプリパスワードが正しいかを確認してください。');
+    console.error('   手順: docs/gmail-setup.md');
+    process.exit(1);
+  }
+  if (failures) {
+    console.warn(`\n⚠️ ${failures}件のアカウントで失敗しましたが、過半数は採れているので続けます。`);
+  }
+
   console.log('=== 完了・課金は発生していません（$0）===');
 }
 

@@ -196,13 +196,11 @@ async function main() {
 
   console.log(`\n合計 ${all.length}件（重複除去後）`);
 
-  // 全アカウントが落ちたら気づけるようにする。静かに0件で終わらせない。
-  if (failures === REFRESH_TOKENS.length) {
-    console.error('\n❌ 全アカウントで失敗しました。リフレッシュトークンの失効が疑われます。');
-    console.error('   docs/gmail-setup.md の手順で取り直してください。');
-    process.exit(1);
-  }
-
+  // ★書き込みを判定より先にやる★
+  //   以前は全滅時にここへ来る前に exit していたので、部分的に採れた分まで
+  //   捨てていた。しかも古い collected-gmail.json が残るため、次の工程は
+  //   前日のメールを今日のものとして扱っていた。
+  //   結果がどうであれ、その回の実測をそのまま書く。
   await writeFile('collected-gmail.json', JSON.stringify({
     collectedAt: new Date().toISOString(),
     // どちらの経路で採れたかを残す。併用にしたので、心拍を見たときに
@@ -212,8 +210,25 @@ async function main() {
     counts: { total: all.length, accounts: REFRESH_TOKENS.length, failures },
     items: all,
   }, null, 2));
-
   console.log('📦 collected-gmail.json に保存');
+
+  // ★過半数が落ちたら失敗として返す★
+  //   2026-08-31 の実行が 3 アカウント中 2 つ失敗したのに「正常終了」で
+  //   通ってしまった。全滅だけを失敗とみなす設計だったため、
+  //   IMAP の受け皿も呼ばれず、見出しも健全なままだった。
+  //   大半が死んでいる状態は「動いている」ではない。
+  const dead = failures * 2 > REFRESH_TOKENS.length;
+  if (dead) {
+    console.error(`\n❌ ${REFRESH_TOKENS.length}アカウント中 ${failures}件で失敗しました。`);
+    console.error('   リフレッシュトークンの失効が疑われます（テストモードなら7日で切れます）。');
+    console.error('   docs/gmail-setup.md の「失効したとき」を参照してください。');
+    console.error('   採れた分は保存済みです。受け皿（IMAP）があればそちらを試します。');
+    process.exit(1);
+  }
+  if (failures) {
+    console.warn(`\n⚠️ ${failures}件のアカウントで失敗しましたが、過半数は採れているので続けます。`);
+  }
+
   console.log('=== 完了・課金は発生していません（$0）===');
 }
 
