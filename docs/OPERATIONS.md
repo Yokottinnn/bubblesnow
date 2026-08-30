@@ -249,8 +249,28 @@ cd ~/bubblesnow && bash mac/install-remote-control.sh
 
 `claude remote-control`（サーバーモード）を LaunchAgent で常駐させる。
 ログイン時に自動起動し、落ちても `KeepAlive` で起こし直す。
-**前提: Mac の Claude Code で一度 `/login` を済ませていること。**
-未ログインだと `claude remote-control` はエラーで終了する（スクリプトが先に検出する）。
+
+**前提: full-scope のログインであること。** ここは実際に踏んだ。
+
+```
+Error: Remote Control requires a full-scope login token. Long-lived tokens (from
+`claude setup-token` or CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only
+for security reasons. Run `claude auth login` to use Remote Control.
+```
+
+`claude setup-token` で作る長期トークンは **推論専用** にスコープが絞られていて、
+Remote Control には使えない。見た目には普通にログインできていて、対話も
+コミットも問題なくできるので、これが理由だと気づきにくい。API キーとも別物。
+
+`claude auth login` で入り直す。`CLAUDE_CODE_OAUTH_TOKEN` が環境変数に
+残っていると再ログインしても上書きされるので、その場合は `~/.zshrc` などから
+外してターミナルを開き直すこと。
+
+**日次バッチには影響しない。** `mac/run-daily.sh` は claude を使わず node だけで
+動くので、ログインを切り替えても recs の生成は変わらない。
+
+常駐側は plist で `env -u` して、API キーと長期トークンの両方を断ち切っている。
+対話シェルに残っていても常駐プロセスには入らない。
 
 登録すると、スマホや claude.ai/code のセッション一覧に **「BubblesNow (Mac)」** が出る。
 クラウドのセッションからは `create_session` でこの環境にセッションを立てられる。

@@ -55,18 +55,34 @@ if [ "$RC_CODE" -ne 0 ]; then
   echo "  ---------------------"
   echo
 
-  # 一番ありがちな原因。Remote Control はサブスクリプションのログインが要る。
-  # APIキーが環境にあると claude はそちらで認証し、/login 済みでも対象外になる。
-  if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  # 実際にこの Mac で起きた原因。claude setup-token で作る長期トークンは
+  # 推論専用にスコープが絞られていて、Remote Control には使えない。
+  # 見た目には「ログイン済み」なので、これが理由だと気づきにくい。
+  if printf '%s' "$RC_OUT" | grep -q "full-scope login token"; then
+    echo "  → 長期トークン（claude setup-token / CLAUDE_CODE_OAUTH_TOKEN）で"
+    echo "     認証されています。これは推論専用で Remote Control には使えません。"
+    echo
+    echo "     1. claude auth login"
+    if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+      echo "     2. CLAUDE_CODE_OAUTH_TOKEN が環境変数にあります。"
+      echo "        残っていると再ログインしても上書きされるので、"
+      echo "        ~/.zshrc などから外してターミナルを開き直してください。"
+      echo "     3. bash mac/install-remote-control.sh"
+    else
+      echo "     2. bash mac/install-remote-control.sh"
+      echo
+      echo "     （CLAUDE_CODE_OAUTH_TOKEN は環境変数には無いので、"
+      echo "       保存済みの資格情報を差し替えるだけで済みます）"
+    fi
+    echo
+    echo "  日次バッチは claude を使わない（node だけ）ので、"
+    echo "  ログインを切り替えても mac/run-daily.sh には影響しません。"
+  elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
     echo "  ⚠️ ANTHROPIC_API_KEY が設定されています。"
     echo "     Remote Control は API キーでは使えません（サブスクリプションのログインが必要）。"
-    echo "     シェルの設定（~/.zshrc など）から外すか、この行だけ外して試してください:"
-    echo
-    echo "       env -u ANTHROPIC_API_KEY claude remote-control --help"
-    echo
+    echo "     シェルの設定（~/.zshrc など）から外して、もう一度実行してください。"
   else
-    echo "  ANTHROPIC_API_KEY は設定されていません。"
-    echo "  claude を起動して /login を済ませてから、もう一度実行してください。"
+    echo "  claude auth login を済ませてから、もう一度実行してください。"
     echo "  すでにログイン済みなら、上の返答をそのまま共有してください。"
   fi
   exit 1
