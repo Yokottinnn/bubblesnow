@@ -45,6 +45,9 @@ const MAX_TOTAL = Number(process.env.MAX_TOTAL || 60);
 // 同じキャンペーンが複数アカウントに届いていても、下でタイトル重複を除く。
 const SOURCE_FILES = ['collected-x.json', 'collected-sources.json',
   'collected-gmail.json', 'collected-gmail-imap.json'];
+// 収集物をどこまで古くても使うか。日次で回るので、これを過ぎたものは
+// 「今日の材料」ではない。廃止した経路の置き土産を混ぜないための線でもある。
+const MAX_SOURCE_AGE_H = Number(process.env.MAX_SOURCE_AGE_H || 36);
 // learn-preferences.mjs が書き出す学習結果。無ければ手書きの重みだけで動く。
 const WEIGHTS_FILE = 'learned-weights.json';
 // 学習分がスコア全体を支配しないための上限。手書きの信号は「行動できるか」を
@@ -411,6 +414,20 @@ async function loadSources() {
     try {
       const data = JSON.parse(await readFile(f, 'utf8'));
       const list = Array.isArray(data.items) ? data.items : [];
+
+      /* ★古い収集物は使わない★
+         収集に失敗しても前回のファイルは残る。さらに、経路を廃止すると
+         （OAuth をやめて IMAP に一本化する等）そのファイルは二度と
+         更新されないまま残り続ける。件数だけ見て読み込むと、
+         止まった経路の中身を毎晩いつまでも材料に混ぜることになる。
+         日次で回る前提なので、36時間を過ぎたものは黙って外す。 */
+      const at = Date.parse(data.collectedAt || '');
+      const ageH = Number.isFinite(at) ? (Date.now() - at) / 3600000 : null;
+      if (ageH !== null && ageH > MAX_SOURCE_AGE_H) {
+        found.push(`${f} (${Math.round(ageH)}時間前のため除外)`);
+        continue;
+      }
+
       items.push(...list);
       found.push(`${f} (${list.length}件)`);
     } catch {
