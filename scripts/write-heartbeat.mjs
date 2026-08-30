@@ -35,6 +35,25 @@ async function counts(file) {
   }
 }
 
+/* 収集ファイルの付帯情報（いつ・どの経路で採れたか）。
+   ★これが無いと心拍が嘘をつく★ 収集に失敗しても前回のファイルは残るので、
+   counts だけ読むと「昨日の件数」を今日の成果として書いてしまう。
+   失敗しているのに健全に見えるのが一番まずい。 */
+async function meta(file, maxAgeHours = 12) {
+  try {
+    const obj = JSON.parse(await readFile(file, 'utf8'));
+    const at = Date.parse(obj?.collectedAt || '');
+    const ageH = Number.isFinite(at) ? (Date.now() - at) / 3600000 : null;
+    return {
+      method: obj?.method || null,
+      ageH,
+      stale: ageH === null ? true : ageH > maxAgeHours,
+    };
+  } catch {
+    return { method: null, ageH: null, stale: true };
+  }
+}
+
 /* 配列の「長さ」だけ。中身は見ない。 */
 async function length(file) {
   try {
@@ -63,22 +82,30 @@ async function main() {
   const sha = (process.env.HEARTBEAT_SHA || '').slice(0, 7) || '不明';
 
   const x = await counts('collected-x.json');
+  const xMeta = await meta('collected-x.json');
   const gmail = await counts('collected-gmail.json');
   const learn = await counts('learned-weights.json');
   const built = await length('recs-built-preview.json');
 
-  /* Gmail は「設定されていない」と「設定されているが全滅」を区別する。
-     前者は仕様どおりの省略、後者はトークンの失効を疑う場面で、対応が違う。 */
+  /* Gmail は「設定されていない」「今回採れなかった」「採れた」を区別する。
+     どれも対応が違うので、まとめて「不明」にしない。 */
+  const gmailMeta = await meta('collected-gmail.json');
+  const configured = process.env.GMAIL_IMAP_ACCOUNTS || process.env.GMAIL_REFRESH_TOKENS;
   let gmailLine;
-  if (!gmail) {
-    // 設定の有無は2通りある（IMAP / OAuth）。どちらかがあれば「設定あり」。
-    const configured = process.env.GMAIL_IMAP_ACCOUNTS || process.env.GMAIL_REFRESH_TOKENS;
-    gmailLine = configured
-      ? '設定あり・今回は収集できず（collected-gmail.json が無い）'
-      : '未設定のため省略（docs/gmail-setup.md）';
+  if (!gmail || gmailMeta.stale) {
+    if (!configured) {
+      gmailLine = '未設定のため省略（docs/gmail-setup.md）';
+    } else if (gmail && gmailMeta.stale) {
+      // 前回のファイルが残っているだけ。件数を書くと今日の成果に見えるので書かない。
+      const days = gmailMeta.ageH === null ? '?' : Math.floor(gmailMeta.ageH / 24);
+      gmailLine = `⚠️ 今回は採れず（残っているのは ${days} 日前のファイル）`;
+    } else {
+      gmailLine = '⚠️ 今回は採れず（collected-gmail.json が無い）';
+    }
   } else {
     const ok = (gmail.accounts ?? 0) - (gmail.failures ?? 0);
-    gmailLine = `${n(ok)} / ${n(gmail.accounts)} アカウント成功、${n(gmail.total)}件`;
+    const via = gmailMeta.method === 'imap' ? 'IMAP' : gmailMeta.method === 'oauth' ? 'OAuth' : '経路不明';
+    gmailLine = `${via}: ${n(ok)} / ${n(gmail.accounts)} アカウント成功、${n(gmail.total)}件`;
     if (gmail.failures) gmailLine += `（失敗 ${gmail.failures}）`;
   }
 
@@ -98,7 +125,7 @@ async function main() {
 
 | 材料 | 結果 |
 |---|---|
-| X | ${x ? `${n(x.total)}件（検索 ${n(x.search)} / プロフィール ${n(x.profile)}）` : '不明'} |
+| X | ${x && !xMeta.stale ? `${n(x.total)}件（検索 ${n(x.search)} / プロフィール ${n(x.profile)}）` : '⚠️ 今回は採れず'} |
 | Gmail | ${gmailLine} |
 
 ## 学習
@@ -128,4 +155,4 @@ if (invoked === 'write-heartbeat.mjs') {
   });
 }
 
-export { counts, length, jst };
+export { counts, length, meta, jst };

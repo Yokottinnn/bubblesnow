@@ -348,6 +348,7 @@ async function main() {
   // 出力先も形も OAuth 版と同じ。build-recs.mjs は変更なしで読める。
   await writeFile('collected-gmail.json', JSON.stringify({
     collectedAt: new Date().toISOString(),
+    method: 'imap',
     query: QUERY,
     counts: { total: all.length, accounts: list.length, failures },
     items: all,

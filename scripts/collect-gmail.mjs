@@ -205,6 +205,9 @@ async function main() {
 
   await writeFile('collected-gmail.json', JSON.stringify({
     collectedAt: new Date().toISOString(),
+    // どちらの経路で採れたかを残す。併用にしたので、心拍を見たときに
+    // 「OAuth がまだ生きているのか、IMAP に落ちているのか」が分かる必要がある。
+    method: 'oauth',
     query: QUERY,
     counts: { total: all.length, accounts: REFRESH_TOKENS.length, failures },
     items: all,

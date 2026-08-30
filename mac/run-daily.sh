@@ -104,32 +104,43 @@ fi
 # ── ①' Gmail から収集 ──
 # 未設定なら丸ごと飛ばす。X だけでも成立するので、ここで止めない。
 #
-# 取り方が2通りある。mac/.env に書いてあるほうが選ばれる。
-#   GMAIL_IMAP_ACCOUNTS  … アプリパスワード + IMAP。トークンが失効しない
-#   GMAIL_REFRESH_TOKENS … OAuth。同意画面がテストモードだと7日で切れる
-# 両方あれば IMAP を使う。切り替えは .env の書き換えだけで済み、
-# 片方が Google 側の都合で使えなくなっても、もう片方に戻せる。
+# 取り方が2通りあり、**両方あれば OAuth を先に試して、駄目なら IMAP に落ちる**。
+#   GMAIL_REFRESH_TOKENS … OAuth。いま動いているのでこちらが第一候補
+#   GMAIL_IMAP_ACCOUNTS  … アプリパスワード + IMAP。失効しないので受け皿にする
+#
+# 順番に意味がある。OAuth は同意画面がテストモードだとトークンが7日で失効し、
+# 本番でも Google の方針変更を受けうる。そのとき収集が丸ごと止まるのを避けたい。
+# 逆に IMAP を先にすると、いま確実に動いている経路をわざわざ後回しにすることになる。
+# 動いているほうを使い、倒れたときだけ乗り換える。
+GMAIL_ORDER=""
+[ -n "${GMAIL_REFRESH_TOKENS:-}" ] && GMAIL_ORDER="scripts/collect-gmail.mjs"
 if [ -n "${GMAIL_IMAP_ACCOUNTS:-}" ]; then
-  GMAIL_SCRIPT="scripts/collect-gmail-imap.mjs"
-elif [ -n "${GMAIL_REFRESH_TOKENS:-}" ]; then
-  GMAIL_SCRIPT="scripts/collect-gmail.mjs"
-else
-  GMAIL_SCRIPT=""
+  GMAIL_ORDER="${GMAIL_ORDER:+$GMAIL_ORDER }scripts/collect-gmail-imap.mjs"
 fi
 
-if [ -n "$GMAIL_SCRIPT" ]; then
+if [ -n "$GMAIL_ORDER" ]; then
   echo ""
-  echo "--- ①' Gmail から収集（$GMAIL_SCRIPT）---"
-  if ! node "$GMAIL_SCRIPT"; then
+  echo "--- ①' Gmail から収集 ---"
+  GMAIL_OK=0
+  # パスに空白は無いので、この単語分割は意図どおり。
+  for GMAIL_SCRIPT in $GMAIL_ORDER; do
+    echo "  → $GMAIL_SCRIPT"
+    if node "$GMAIL_SCRIPT"; then GMAIL_OK=1; break; fi
+    echo "  ⚠️ $GMAIL_SCRIPT は失敗しました"
+  done
+
+  if [ "$GMAIL_OK" -eq 0 ]; then
     # 続行はする（X だけでも成立する）が、黙って続けない。
-    # OAuth 同意画面がテストモードのままだとリフレッシュトークンは7日で切れる。
     # 切れても日次は「X だけ」で正常終了してしまうので、
     # ログを読む習慣が無い限り、連携が死んだことに何週間も気づけない。
     # 心拍の見出しに出して、GitHub を見れば分かる状態にする。
     GMAIL_WARN="（⚠️ Gmail の収集に失敗）"
-    echo "  ⚠️ Gmail の収集に失敗しました。X の材料だけで続けます"
+    echo "  ⚠️ Gmail の収集に全経路で失敗しました。X の材料だけで続けます"
     echo "     invalid_grant なら docs/gmail-setup.md「失効したとき」を参照。"
-    echo "     繰り返すなら、アプリパスワード + IMAP に切り替える手もあります。"
+    if [ -z "${GMAIL_IMAP_ACCOUNTS:-}" ]; then
+      echo "     受け皿がありません。GMAIL_IMAP_ACCOUNTS を設定しておくと、"
+      echo "     OAuth が失効した日も収集が止まりません（docs/gmail-setup.md）。"
+    fi
   fi
 else
   echo ""
