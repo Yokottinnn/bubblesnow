@@ -190,11 +190,28 @@ OAuth の面倒はほぼ全部「同意画面」から来ている。テスト�
 
 ```bash
 cat >> ~/bubblesnow/mac/.env <<'ENV'
-GMAIL_IMAP_ACCOUNTS=tacseigaku@gmail.com:xxxxxxxxxxxxxxxx,daredemosanka@gmail.com:yyyyyyyyyyyyyyyy,n-yokota@fieldbeside.com:zzzzzzzzzzzzzzzz
+GMAIL_IMAP_ACCOUNTS="tacseigaku@gmail.com:xxxxxxxxxxxxxxxx,n-yokota@fieldbeside.com:zzzzzzzzzzzzzzzz"
 ENV
 ```
 
-表示される4桁区切りの空白は入れたままでよい（スクリプトが落とす）。
+### ★空白は必ず詰める。引用符も外さない★
+
+Google はアプリパスワードを `abcd efgh ijkl mnop` と4桁区切りで表示する。
+**この空白を残すと `mac/.env` を読み込めない。**
+
+`run-daily.sh` は `set -a && . mac/.env` でこのファイルを**シェルとして解釈する**ので、
+
+```
+GMAIL_IMAP_ACCOUNTS=a@gmail.com:abcd efgh ijkl mnop
+```
+
+は「`...:abcd` を代入して、`efgh` というコマンドを実行」と読まれ、
+`command not found: efgh` になる。2026-08-30 に実際にこれを踏んだ。
+
+スクリプト側（`accounts()`）は空白を落とすようになっているが、**それはシェルが
+読み込めた後の話**で、順番が逆。`.env` の時点では空白があってはいけない。
+
+引用符で囲むのは、カンマ区切りで長くなるぶん取り違えを防ぐため。
 
 4. 確かめる
 

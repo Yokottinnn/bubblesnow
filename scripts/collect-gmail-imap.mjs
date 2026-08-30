@@ -31,8 +31,10 @@
 //
 // ★必要な環境変数（mac/.env）★
 //   GMAIL_IMAP_ACCOUNTS … アドレスとアプリパスワードの組をカンマ区切り
-//                          例: a@gmail.com:abcdefghijklmnop,b@gmail.com:qrstuvwxyzabcdef
-//                          アプリパスワードの空白は取り除いてよい
+//     例: GMAIL_IMAP_ACCOUNTS="a@gmail.com:abcdefghijklmnop,b@gmail.com:qrstuvwxyzabcdef"
+//     ★4桁区切りの空白は必ず消し、値全体を二重引用符で囲む★
+//     run-daily.sh は `. mac/.env` でこのファイルをシェルとして解釈するので、
+//     空白が残っていると値が途中で切れる（実際に踏んだ）。
 //
 // 実行: node scripts/collect-gmail-imap.mjs
 
@@ -61,6 +63,21 @@ function accounts() {
       return { email: pair.slice(0, i).trim(), pass: pair.slice(i + 1).replace(/\s+/g, '') };
     })
     .filter((a) => a && a.email && a.pass);
+}
+
+/* .env が壊れていないかを先に見る。
+   ★実際に踏んだ壊れ方★ アプリパスワードは 4 桁区切りの空白付きで表示される。
+   それを引用符なしで .env に貼ると、run-daily.sh の `. mac/.env` が
+   シェルとして解釈するので「...:abcd を代入して efgh を実行」と読まれ、
+   値が 4 文字で切れる。IMAP 側からは「パスワードが違う」としか見えず、
+   本当の原因（.env の書き方）に辿り着けない。ここで名指しする。 */
+function warnIfTruncated(list) {
+  const short = list.filter((a) => a.pass.length < 16);
+  if (!short.length) return;
+  console.warn(`⚠️ ${short.length}件のアプリパスワードが16桁未満です（${short.map((a) => a.pass.length).join(', ')}文字）。`);
+  console.warn('   .env で空白を詰めていない可能性があります。4桁区切りの空白は消して、');
+  console.warn('   値全体を二重引用符で囲んでください（docs/gmail-setup.md）。');
+  console.warn('   例: GMAIL_IMAP_ACCOUNTS="a@gmail.com:abcdefghijklmnop"');
 }
 
 /* ── 最小の IMAP クライアント ──
@@ -307,6 +324,7 @@ async function main() {
   console.log('※ 販促カテゴリに限定。BODY.PEEK なので既読になりません。件名や本文はログに出しません\n');
 
   const list = accounts();
+  warnIfTruncated(list);
   if (!list.length) {
     console.error('❌ GMAIL_IMAP_ACCOUNTS が未設定です。');
     console.error('   mac/.env に "アドレス:アプリパスワード" をカンマ区切りで書いてください。');
@@ -369,4 +387,4 @@ if (invoked === 'collect-gmail-imap.mjs') {
   main().catch((e) => { console.error('❌ 失敗:', e.message); process.exit(1); });
 }
 
-export { decodeWords, snippetFrom, headerOf, accounts, scan, groupFetch, QUERY };
+export { decodeWords, snippetFrom, headerOf, accounts, warnIfTruncated, scan, groupFetch, QUERY };
