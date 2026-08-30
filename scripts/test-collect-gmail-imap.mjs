@@ -10,7 +10,7 @@
 //
 // 実行: node scripts/test-collect-gmail-imap.mjs
 
-import { decodeWords, snippetFrom, headerOf, accounts, scan } from './collect-gmail-imap.mjs';
+import { decodeWords, snippetFrom, headerOf, accounts, scan, groupFetch } from './collect-gmail-imap.mjs';
 import { keep } from './collect-gmail.mjs';
 
 let pass = 0;
@@ -46,6 +46,29 @@ function ok(name, cond) { eq(name, Boolean(cond), true); }
 {
   const buf = Buffer.from('* SEARCH 1 2 3\r\n', 'latin1');
   eq('完了行が無ければ待つ', scan(buf, 'a1').done, false);
+}
+
+/* ── groupFetch（1通ずつに束ねる）──
+   ここが最も壊れやすい。BODY[1] は非マルチパートのメールでは NIL が返り、
+   リテラルが1つしか来ない。「2つずつ」で数えると、そこから先は
+   別のメールの本文が別の件名に貼り付く。件名と本文が入れ替わった rec が
+   公開の場に出るので、静かに間違うぶん一番たちが悪い。 */
+{
+  const H = (n) => ({ text: `* ${n} FETCH (UID ${n} BODY[HEADER.FIELDS (SUBJECT)] {9}`, literal: Buffer.from(`h${n}`) });
+  const B = (n) => ({ text: ' BODY[1]<0> {9}', literal: Buffer.from(`b${n}`) });
+  const close = { text: ')', literal: null };
+
+  // 2通目だけ本文が無い（＝実際に起きるケース）
+  const lines = [H(1), B(1), close, H(2), close, H(3), B(3), close];
+  const recs = groupFetch(lines);
+
+  eq('3通に束ねる', recs.length, 3);
+  eq('1通目の本文', recs[0].body.toString(), 'b1');
+  eq('本文の無い通は body が null', recs[1].body, null);
+  eq('本文の無い通でもヘッダーは取れる', recs[1].header.toString(), 'h2');
+  // ここが本題。ずれていれば 3通目の本文が b1 になる。
+  eq('本文が欠けても後続がずれない', recs[2].body.toString(), 'b3');
+  eq('後続のヘッダーもずれない', recs[2].header.toString(), 'h3');
 }
 
 /* ── decodeWords（件名のデコード）── */

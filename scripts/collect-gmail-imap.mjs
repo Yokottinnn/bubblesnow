@@ -205,6 +205,31 @@ function headerOf(raw, name) {
   return m ? m[1].replace(/\r?\n\s+/g, ' ').trim() : '';
 }
 
+/* FETCH の応答を1通ずつに束ねる。
+   リテラルを「要求した順に2つずつ」取ってはいけない。BODY[1] は
+   非マルチパートのメールでは NIL が返り、リテラルが1つしか来ない。
+   数で数えると、そこから先は別のメールの本文が別の件名に貼り付く。
+   件名と本文が入れ替わった rec が公開の場に出るので、実害がある。
+
+   リテラルは必ず自分の行のテキストに種別を持っている
+   （... BODY[HEADER.FIELDS (...)] {123} / ... BODY[1]<0> {456}）ので、
+   順番ではなくその名前で振り分ける。 */
+function groupFetch(lines) {
+  const out = [];
+  let cur = null;
+  for (const l of lines) {
+    if (/^\* \d+ FETCH/i.test(l.text)) {
+      if (cur) out.push(cur);
+      cur = { header: null, body: null };
+    }
+    if (!cur || !l.literal) continue;
+    if (/HEADER\.FIELDS/i.test(l.text)) cur.header = l.literal;
+    else if (/BODY\[1\]/i.test(l.text)) cur.body = l.literal;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
 async function collectAccount({ email, pass }) {
   const sock = await connect(HOST, PORT);
   const c = client(sock);
@@ -244,15 +269,14 @@ async function collectAccount({ email, pass }) {
       `UID FETCH ${uids.join(',')} (BODY.PEEK[HEADER.FIELDS (SUBJECT LIST-UNSUBSCRIBE MESSAGE-ID)] BODY.PEEK[1]<0.3000>)`,
     );
 
-    // リテラルは要求した順に並ぶ: ヘッダー → 本文の先頭。
     const items = [];
-    const lits = fetched.lines.filter((l) => l.literal);
-    for (let i = 0; i + 1 < lits.length; i += 2) {
-      const raw = lits[i].literal;
+    for (const rec of groupFetch(fetched.lines)) {
+      if (!rec.header) continue;
+      const raw = rec.header;
       const subject = decodeWords(headerOf(raw, 'Subject'));
       const item = {
         subject,
-        snippet: snippetFrom(lits[i + 1].literal),
+        snippet: rec.body ? snippetFrom(rec.body) : '',
         bulk: Boolean(headerOf(raw, 'List-Unsubscribe')),
         messageId: headerOf(raw, 'Message-ID'),
       };
@@ -338,4 +362,4 @@ if (invoked === 'collect-gmail-imap.mjs') {
   main().catch((e) => { console.error('❌ 失敗:', e.message); process.exit(1); });
 }
 
-export { decodeWords, snippetFrom, headerOf, accounts, scan, QUERY };
+export { decodeWords, snippetFrom, headerOf, accounts, scan, groupFetch, QUERY };
