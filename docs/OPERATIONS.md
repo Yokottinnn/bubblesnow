@@ -247,6 +247,27 @@ Mac から **外向きに** Anthropic へ繋ぐので、この egress 制限を�
 cd ~/bubblesnow && bash mac/install-remote-control.sh
 ```
 
+### 別のディレクトリも常駐させる
+
+引数で対象と表示名を渡せる。複数入れても干渉しない。
+
+```bash
+bash mac/install-remote-control.sh ~/daily-hack "daily-hack"
+bash mac/install-remote-control.sh ~/daily-hack "daily-hack-blog"   # 別ディレクトリなら別名で
+```
+
+ラベルは `com.bubblesnow.remote.<表示名から作った slug>` になる。
+既定（引数なし）だけは `com.bubblesnow.remote` のままにしてある——
+すでに動いているものを改名すると入れ直しになり、繋がっている常駐を切るため。
+接頭辞が揃っているので `launchctl list | grep bubblesnow` で全部拾える。
+
+ログは追加ぶんだけ `~/Library/Logs/claude-remote/<slug>.out.log` に出る
+（対象が別リポジトリだと `mac/logs/` があるとは限らないため）。
+
+**手動起動のままだと再起動で消える。** `ps` の PPID が `1` でなければ、
+それはターミナルから起こしたプロセス。実際 daily-hack 系の2つは
+19〜20日間そうなっていた（2026-08-30 に確認）。
+
 `claude remote-control`（サーバーモード）を LaunchAgent で常駐させる。
 ログイン時に自動起動し、落ちても `KeepAlive` で起こし直す。
 

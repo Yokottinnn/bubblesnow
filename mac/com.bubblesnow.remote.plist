@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.bubblesnow.remote</string>
+  <string>__LABEL__</string>
 
   <!-- Claude Code をサーバーモードで常駐させる。
        スマホ／クラウドのセッションはここに繋いで Mac を動かす。
@@ -25,7 +25,7 @@
     <string>__CLAUDE__</string>
     <string>remote-control</string>
     <string>--name</string>
-    <string>BubblesNow (Mac)</string>
+    <string>__NAME__</string>
     <string>--permission-mode</string>
     <string>acceptEdits</string>
   </array>
@@ -45,9 +45,9 @@
   <integer>30</integer>
 
   <key>StandardOutPath</key>
-  <string>__REPO__/mac/logs/remote.out.log</string>
+  <string>__LOG_DIR__/__LOG_BASE__.out.log</string>
   <key>StandardErrorPath</key>
-  <string>__REPO__/mac/logs/remote.err.log</string>
+  <string>__LOG_DIR__/__LOG_BASE__.err.log</string>
 
   <key>EnvironmentVariables</key>
   <dict>

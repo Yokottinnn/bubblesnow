@@ -19,12 +19,49 @@
 # ★前提★
 #   Mac の Claude Code で一度 /login を済ませておくこと。
 #   未ログインだと claude remote-control はエラーで終了する。
+#
+# ★使い方★
+#   bash mac/install-remote-control.sh
+#       → このリポジトリを対象に常駐（既定）
+#   bash mac/install-remote-control.sh ~/daily-hack "daily-hack"
+#       → 別のディレクトリを対象に、別の常駐を追加する
+#
+#   複数入れても互いに干渉しない。ラベルが分かれ、セッション一覧にも
+#   それぞれ別の名前で出る。まとめて見るときは
+#   `launchctl list | grep bubblesnow` で全部拾える。
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "$HERE/.." && pwd)"
-LABEL="com.bubblesnow.remote"
+
+# 第1引数で対象ディレクトリ、第2引数で表示名を変えられる。
+# 省略時はこのリポジトリ（＝これまでと同じ動き）。
+TARGET_DIR="${1:-$(cd "$HERE/.." && pwd)}"
+REPO="$(cd "$TARGET_DIR" 2>/dev/null && pwd)" || { echo "❌ ディレクトリが見つかりません: $TARGET_DIR"; exit 1; }
+DEFAULT_REPO="$(cd "$HERE/.." && pwd)"
+DISPLAY_NAME="${2:-BubblesNow (Mac)}"
+
+# ラベルは既定の1つだけ従来のまま。すでに動いているものを
+# 改名すると入れ直しになり、いま繋がっている常駐を切ることになる。
+# 追加ぶんは接尾辞で分ける。接頭辞を揃えてあるので grep で一括して見つかる。
+if [ "$REPO" = "$DEFAULT_REPO" ] && [ -z "${2:-}" ]; then
+  LABEL="com.bubblesnow.remote"
+  LOG_DIR="$HERE/logs"
+  LOG_BASE="remote"
+else
+  # 英数字以外を - に潰してラベルに使える形にする。
+  SLUG="$(printf '%s' "$DISPLAY_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//')"
+  [ -n "$SLUG" ] || SLUG="extra"
+  LABEL="com.bubblesnow.remote.$SLUG"
+  # 対象が別リポジトリだと mac/logs があるとは限らないので、ユーザーの
+  # ログ置き場に出す。リポジトリの中にログを置かずに済む利点もある。
+  LOG_DIR="$HOME/Library/Logs/claude-remote"
+  LOG_BASE="$SLUG"
+fi
 DEST="$HOME/Library/LaunchAgents/$LABEL.plist"
+
+echo "  対象     : $REPO"
+echo "  表示名   : $DISPLAY_NAME"
+echo "  ラベル   : $LABEL"
 
 command -v launchctl >/dev/null 2>&1 || { echo "❌ macOS ではありません"; exit 1; }
 
@@ -95,18 +132,23 @@ if [ "$RC_CODE" -ne 0 ]; then
   exit 1
 fi
 
-mkdir -p "$HOME/Library/LaunchAgents" "$HERE/logs"
+mkdir -p "$HOME/Library/LaunchAgents" "$LOG_DIR"
 
 # launchd の PATH は痩せている。いまのシェルの PATH に、
 # claude 本体のあるディレクトリを先頭で足しておく。
 CLAUDE_DIR="$(dirname "$CLAUDE")"
 FULL_PATH="$CLAUDE_DIR:$PATH"
 
+# plist の雛形は1つ。対象ごとの違いは差し込みで吸収する。
 sed -e "s|__REPO__|$REPO|g" \
     -e "s|__CLAUDE__|$CLAUDE|g" \
     -e "s|__HOME__|$HOME|g" \
     -e "s|__PATH__|$FULL_PATH|g" \
-    "$HERE/$LABEL.plist" > "$DEST"
+    -e "s|__LABEL__|$LABEL|g" \
+    -e "s|__NAME__|$DISPLAY_NAME|g" \
+    -e "s|__LOG_DIR__|$LOG_DIR|g" \
+    -e "s|__LOG_BASE__|$LOG_BASE|g" \
+    "$HERE/com.bubblesnow.remote.plist" > "$DEST"
 
 UID_="$(id -u)"
 
@@ -155,9 +197,9 @@ done
 
 echo
 echo "  状態を見る : launchctl print gui/$(id -u)/$LABEL | head -20"
-echo "  ログ       : tail -f $HERE/logs/remote.out.log"
+echo "  ログ       : tail -f $LOG_DIR/$LOG_BASE.out.log"
 echo "  一時停止   : launchctl bootout gui/$(id -u)/$LABEL"
 echo "  外す       : launchctl bootout gui/$(id -u)/$LABEL && rm $DEST"
 echo
 echo "  これ以降、スマホや claude.ai/code のセッション一覧に"
-echo "  「BubblesNow (Mac)」が出ます。そこから この Mac を動かせます。"
+echo "  「$DISPLAY_NAME」が出ます。そこから この Mac を動かせます。"
