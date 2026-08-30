@@ -288,7 +288,7 @@ launchctl getenv CLAUDE_CODE_OAUTH_TOKEN
 | | |
 |---|---|
 | 状態を見る | `launchctl print gui/$(id -u)/com.bubblesnow.remote \| head -20` |
-| 本当に常駐か | `ps -eo pid,ppid,comm \| grep [c]laude` の **PPID が 1**（launchd が親）なら常駐 |
+| 本当に常駐か | `ps -eo pid,ppid,etime,command \| grep 'remote-control' \| grep -v grep` の **2列目（PPID）が 1** なら launchd が親＝常駐 |
 | ログ | `tail -f mac/logs/remote.out.log` |
 | 一時停止 | `launchctl bootout gui/$(id -u)/com.bubblesnow.remote` |
 
@@ -311,6 +311,20 @@ launchctl getenv CLAUDE_CODE_OAUTH_TOKEN
 `install-remote-control.sh` は消えるまで待ってから入れ、それでも読み込まれて
 いれば `kickstart -k` で再起動に切り替える。失敗したときは launchctl の
 エラー本文をそのまま出す。
+
+### 確認コマンドは zsh で書く
+
+macOS の既定シェルは zsh。`grep [c]laude` のような **bash 由来の書き方は使えない。**
+zsh は `[c]laude` をファイル名のパターンとして解釈し、該当が無いと
+`zsh: no matches found` で **grep に届く前に落ちる**。
+実際にこれで PPID の確認ができていなかった（2026-08-30）。
+
+falseネガティブが最悪の形で出る。「確認したが何も出なかった＝動いていない」と
+読めてしまうが、実際にはコマンドが実行すらされていない。引用符で囲むこと。
+
+```bash
+ps -eo pid,ppid,etime,command | grep 'remote-control' | grep -v grep
+```
 
 ### 「✅ 常駐しています」を鵜呑みにしない
 
