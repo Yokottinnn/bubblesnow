@@ -60,12 +60,21 @@ window.onerror=function(msg){var el=document.getElementById("loading-msg");if(el
 var h=React.createElement,useState=React.useState,useEffect=React.useEffect,useRef=React.useRef,useCallback=React.useCallback,useMemo=React.useMemo;
 var FIREBASE_CONFIG={apiKey:"AIzaSyBvWy2zxQRazmGJWU0-NEaw2wxxpb1WkJU",authDomain:"nydaytodo-e0f20.firebaseapp.com",databaseURL:"https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"nydaytodo-e0f20",storageBucket:"nydaytodo-e0f20.firebasestorage.app",messagingSenderId:"984429193076",appId:"1:984429193076:web:ce12b11df5d9914039ee21"};
 var db=null;try{firebase.initializeApp(FIREBASE_CONFIG);db=firebase.database();}catch(e){}
-var Storage={subscribe:function(k,cb){if(db){var r=db.ref(k);r.on("value",function(s){cb(s.val());});return function(){r.off("value");};}else{try{cb(JSON.parse(localStorage.getItem(k)));}catch(e){cb(null);}return function(){};}},set:function(k,v){if(db)db.ref(k).set(v).catch(function(e){
+var Storage={subscribe:function(k,cb){if(db){var r=db.ref(k);r.on("value",function(s){cb(s.val());});return function(){r.off("value");};}else{try{cb(JSON.parse(localStorage.getItem(k)));}catch(e){cb(null);}return function(){};}},set:function(k,v){
   /* 2026-08-23: 前は catch(function(){}) で完全に握りつぶしていた。
      doRefresh で一度同じパターンにより「押しても何も起きない」原因不明
-     バグを出しているので、最低限 console には残す。 */
-  console.error("Firebase write failed:",k,e&&e.message||e);
-});else try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
+     バグを出しているので、最低限 console には残す。
+
+     2026-08-30: 成否を示す Promise を返すようにした。console に出しても
+     スマホでは誰も見ない。呼び出し側が「保存できませんでした」と
+     画面に出せるようにする。reject ではなく true/false で返すのは、
+     戻り値を見ない既存の呼び出しが未処理の rejection を出さないため。 */
+  if(db)return db.ref(k).set(v).then(function(){return true;}).catch(function(e){
+    console.error("Firebase write failed:",k,e&&e.message||e);
+    return false;
+  });
+  try{localStorage.setItem(k,JSON.stringify(v));return Promise.resolve(true);}catch(e){return Promise.resolve(false);}
+}};
 /* CREDS は廃止。認証は Firebase Auth（Google サインイン）に移した。
    公開ソースに書いたパスワードは秘密として機能しないため。 */
 var CC={"契約・手続き":{bg:"#FF6B6B",glow:"rgba(255,107,107,.4)",text:"#fff"},"お金":{bg:"#FFD43B",glow:"rgba(255,212,59,.4)",text:"#333"},"ヘルスケア":{bg:"#51CF66",glow:"rgba(81,207,102,.4)",text:"#fff"},"グルメ":{bg:"#FFA94D",glow:"rgba(255,169,77,.4)",text:"#fff"},"ショッピング":{bg:"#F06595",glow:"rgba(240,101,149,.4)",text:"#fff"},"おでかけ":{bg:"#20C997",glow:"rgba(32,201,151,.4)",text:"#fff"},"キャリア・学び":{bg:"#5C85E0",glow:"rgba(92,133,224,.4)",text:"#fff"},"ヒト":{bg:"#E599F7",glow:"rgba(229,153,247,.4)",text:"#fff"},"その他":{bg:"#845EF7",glow:"rgba(132,94,247,.4)",text:"#fff"}};
@@ -274,6 +283,26 @@ function isSafeUrl(u){return typeof u==="string"&&/^(https?|message):/.test(u);}
 var SRC={gmail:{label:"📧 Gmail",bg:"rgba(66,133,244,.15)",color:"#4285F4"},calendar:{label:"📅 カレンダー",bg:"rgba(66,133,244,.15)",color:"#4285F4"},news:{label:"📰 ニュース",bg:"rgba(255,169,77,.15)",color:"#FFA94D"},x:{label:"🕊️ X",bg:"rgba(255,255,255,.1)",color:"#aaa"},instagram:{label:"📸 Instagram",bg:"rgba(225,48,108,.15)",color:"#E1306C"},line:{label:"💬 LINE",bg:"rgba(6,199,85,.15)",color:"#06C755"},trend:{label:"🔮 トレンド",bg:"rgba(132,94,247,.15)",color:"#845EF7"}};
 function RecommendTab(p){
 var recs=p.recs;var onAdd=p.onAdd;var onDismiss=p.onDismiss;var added=p.added;var dismissed=p.dismissed;var dismissedTitles=p.dismissedTitles||[];var allTasks=p.allTasks||[];var refreshMsg=p.refreshMsg||"";
+var onComment=p.onComment;var recComments=p.recComments||[];
+/* コメント欄は一度に1枚だけ開く。スマホで複数開くと、どのカードに
+   書いているのか分からなくなるため。 */
+var _co=useState(null),coId=_co[0],sCoId=_co[1];
+var _cv=useState(0),coVote=_cv[0],sCoVote=_cv[1];
+var _ct=useState(""),coText=_ct[0],sCoText=_ct[1];
+var _cm=useState(""),coMsg=_cm[0],sCoMsg=_cm[1];
+var commented={};recComments.forEach(function(c){if(c&&c.title)commented[c.title]=c;});
+var openComment=function(r){
+var prev=commented[String(r.title||"").trim()];
+sCoId(r.id);sCoVote(prev?prev.vote:0);sCoText(prev?prev.text:"");sCoMsg("");
+};
+var submitComment=function(r){
+if(!coVote)return;
+sCoMsg("保存中...");
+Promise.resolve(onComment?onComment(r,coVote,coText):false).then(function(ok){
+if(ok){sCoMsg("✓ 保存しました");setTimeout(function(){sCoId(null);sCoMsg("");},900);}
+else sCoMsg("保存できませんでした");
+});
+};
 var taskNames=allTasks.map(function(t){return t.name.replace(/\n/g,"");});
 var visible=recs.filter(function(r){var titleLower=r.title?r.title.trim().toLowerCase():"";var titleDismissed=dismissedTitles.some(function(dt){if(!dt)return false;if(dt===titleLower)return true;var shorter=dt.length<=titleLower.length?dt:titleLower;if(shorter.length<6)return false;return titleLower.indexOf(dt)>=0||dt.indexOf(titleLower)>=0;});return dismissed.indexOf(r.id)<0&&added.indexOf(r.id)<0&&taskNames.indexOf(r.title)<0&&!titleDismissed;});
 return h("div",{style:{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}},
@@ -313,8 +342,23 @@ r.location?h("div",{style:{marginTop:3}},h("a",{href:"https://www.google.com/map
 ),
 h("div",{style:{display:"flex",flexDirection:"column",gap:6,flexShrink:0,alignSelf:"center"}},
 h("button",{onClick:function(){onAdd(r);},style:{width:32,height:32,borderRadius:8,border:"none",background:"linear-gradient(135deg,#845EF7,#5C7CFA)",color:"#fff",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(132,94,247,.3)"}},"+"),
-h("button",{onClick:function(){onDismiss(r.id);},style:{width:32,height:32,borderRadius:8,border:"1px solid rgba(255,255,255,.1)",background:"rgba(255,255,255,.04)",color:"#666",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}},"−")
-)));
+h("button",{onClick:function(){onDismiss(r.id);},style:{width:32,height:32,borderRadius:8,border:"1px solid rgba(255,255,255,.1)",background:"rgba(255,255,255,.04)",color:"#666",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}},"−"),
+h("button",{onClick:function(){coId===r.id?sCoId(null):openComment(r);},title:"この提案について一言",style:{width:32,height:32,borderRadius:8,border:commented[String(r.title||"").trim()]?"1px solid rgba(132,94,247,.45)":"1px solid rgba(255,255,255,.1)",background:commented[String(r.title||"").trim()]?"rgba(132,94,247,.12)":"rgba(255,255,255,.04)",color:commented[String(r.title||"").trim()]?"#B197FC":"#666",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}},commented[String(r.title||"").trim()]?(commented[String(r.title||"").trim()].vote>0?"👍":"👎"):"💬")
+))
+,coId===r.id?h("div",{style:{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,.08)"}},
+h("div",{style:{color:"rgba(255,255,255,.45)",fontSize:10,fontWeight:600,letterSpacing:1,marginBottom:7}},"この提案について"),
+h("div",{style:{display:"flex",gap:6,marginBottom:8}},
+[[1,"👍 もっと見たい","#51CF66"],[-1,"👎 いらない","#FF6B6B"]].map(function(o){
+var on=coVote===o[0];
+return h("button",{key:o[0],onClick:function(){sCoVote(o[0]);},style:{flex:1,padding:"8px 6px",borderRadius:9,border:on?"1px solid "+o[2]:"1px solid rgba(255,255,255,.12)",background:on?o[2]+"22":"rgba(255,255,255,.04)",color:on?o[2]:"rgba(255,255,255,.5)",fontSize:12,fontWeight:on?700:500,cursor:"pointer",fontFamily:"inherit"}},o[1]);
+})),
+h(RTA,{rkey:"reccomment",min:52,value:coText,onChange:function(e){sCoText(e.target.value);},placeholder:"理由や好みを一言（任意）例: サウナ系はもう十分",style:{width:"100%",padding:"9px 11px",borderRadius:9,border:"1px solid rgba(255,255,255,.14)",background:"rgba(255,255,255,.05)",color:"#fff",fontSize:12,outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}),
+h("div",{style:{display:"flex",gap:6,alignItems:"center",marginTop:8}},
+h("button",{onClick:function(){sCoId(null);},style:{padding:"8px 12px",borderRadius:9,border:"1px solid rgba(255,255,255,.12)",background:"transparent",color:"#888",fontSize:12,cursor:"pointer",fontFamily:"inherit"}},"閉じる"),
+h("button",{onClick:function(){submitComment(r);},style:{flex:1,padding:"8px 12px",borderRadius:9,border:"none",background:coVote?"linear-gradient(135deg,#845EF7,#5C7CFA)":"rgba(255,255,255,.06)",color:coVote?"#fff":"rgba(255,255,255,.3)",fontSize:12,fontWeight:600,cursor:coVote?"pointer":"default",fontFamily:"inherit"}},"保存"),
+coMsg?h("span",{style:{fontSize:11,color:"rgba(255,255,255,.55)",whiteSpace:"nowrap"}},coMsg):null),
+h("div",{style:{color:"rgba(255,255,255,.28)",fontSize:10,marginTop:7,lineHeight:1.5}},"👍/👎 が次回以降の選び方に反映されます。一言を書くと、その言葉も手がかりになります。")):null
+);
 })
 ));}
 /* ── Main App with Footer ── */
@@ -401,7 +445,7 @@ var _t=useState([]),tasks=_t[0],sT=_t[1];
 var _recs=useState(INIT_RECS),recs=_recs[0],sRecs=_recs[1];
 var _added=useState([]),added=_added[0],sAdded=_added[1];
 var _dismissed=useState([]),dismissed=_dismissed[0],sDismissed=_dismissed[1];
-var _dismissedTitles=useState([]),dismissedTitles=_dismissedTitles[0],sDismissedTitles=_dismissedTitles[1];
+var _dismissedTitles=useState([]),dismissedTitles=_dismissedTitles[0],sDismissedTitles=_dismissedTitles[1];var _recComments=useState([]),recComments=_recComments[0],sRecComments=_recComments[1];
 var _l=useState(false),loaded=_l[0],sL=_l[1];
 useEffect(function(){
 var unsub=Storage.subscribe("users/yokota/tasks",function(data){
@@ -410,8 +454,9 @@ if(data){var raw=(Array.isArray(data)?data:Object.values(data)).filter(function(
 /* Load recs from Firebase if available */
 var unsub2=Storage.subscribe("users/yokota/recommendations",function(data){var arr=extractRecs(data);if(arr&&arr.length>0)sRecs(sanitizeRecs(arr));else if(!data){Storage.set("users/yokota/recommendations",INIT_RECS);}});
 var unsub3=Storage.subscribe("users/yokota/dismissed",function(data){if(data&&Array.isArray(data))sDismissed(data);});
+var unsub5=Storage.subscribe("users/yokota/recComments",function(data){if(Array.isArray(data))sRecComments(data);});
 var unsub4=Storage.subscribe("users/yokota/dismissedTitles",function(data){if(data&&Array.isArray(data)&&data.length>0)sDismissedTitles(data);else{var knownDismissedTitles=["ジョニー・デップ展","ジョニーデップ展","高輪saunas","nakedガウディ展","空山基 回顧展","空山基展","千鳥ヶ淵 さくらまつり","千鳥ヶ淵さくら","paradise 大手町","paradise大手町","プラネタリウム モネ","プラネタリウムモネ","楽天スーパーsale","楽天sale","こたつ屋台フェス町田","こたつフェス町田","サウナメッツァ大井町","サウナメッツァ大井町 3/28","freeeカード請求 35,034円","freeeカード請求","スタクラ スカウト確認","fundinno求人確認","ビズリーチスカウト","ビズリーチ スカウト返信"];sDismissedTitles(knownDismissedTitles);Storage.set("users/yokota/dismissedTitles",knownDismissedTitles);}});
-return function(){unsub();unsub2();unsub3();unsub4();};
+return function(){unsub();unsub2();unsub3();unsub4();if(unsub5)unsub5();};
 },[]);
 var save=useCallback(function(nt){sT(nt);Storage.set("users/yokota/tasks",nt);},[]);
 
@@ -462,6 +507,21 @@ save(tasks.concat([t]));
 if(editRec)sAdded(added.concat([editRec.id]));
 sEditRec(null);
 };
+/* おすすめへの一言。👍/👎 と任意のテキストを Firebase に残す。
+   これは表示のためではなく、learn-preferences.mjs の教師データになる。
+   これまでの材料は「タスク化した（＝正例）」と「− で却下した（＝負例）」の
+   2つだけで、どちらも行動から推測したものだった。ここで初めて
+   利用者が明示的に「もっと見たい / いらない」を言えるようになる。 */
+var saveRecComment=function(rec,vote,text){
+if(!rec||!vote)return Promise.resolve(false);
+var entry={title:String(rec.title||"").trim(),text:String(text||"").trim(),vote:vote,source:rec.source||"",at:new Date().toISOString()};
+// 同じおすすめへの言い直しは上書きする。迷って押し直したぶんが
+// 重複して学習に効いてしまうため。
+var next=recComments.filter(function(c){return c&&c.title!==entry.title;}).concat([entry]);
+sRecComments(next);
+// Storage.set は true/false を返す。失敗したら画面にそう出す。
+return Storage.set("users/yokota/recComments",next);
+};
 var dismissRec=function(rid){var rec=recs.find(function(r){return r.id===rid;});var nd=dismissed.concat([rid]);sDismissed(nd);Storage.set("users/yokota/dismissed",nd);if(rec&&rec.title){var ndt=dismissedTitles.concat([rec.title.trim().toLowerCase()]);sDismissedTitles(ndt);Storage.set("users/yokota/dismissedTitles",ndt);}};
 var _refreshing=useState(false),refreshing=_refreshing[0],sRefreshing=_refreshing[1];
 var _refreshMsg=useState(""),refreshMsg=_refreshMsg[0],sRefreshMsg=_refreshMsg[1];
@@ -486,7 +546,7 @@ Promise.all([fetchP,minSpin]).then(function(r){
 return h("div",{style:{position:"fixed",inset:0,display:"flex",flexDirection:"column",background:"linear-gradient(135deg,#0f0c29 0%,#1a1a3a 40%,#24243e 100%)",fontFamily:"'Outfit','Noto Sans JP',sans-serif",overflow:"hidden"}},
 /* Content - with bottom padding for footer */
 h("div",{style:{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}},
-tab==="tasks"?h(TaskApp,{tasks:tasks,setTasks:sT,loaded:loaded,save:save,onSwitchTab:function(){setTab("recommend");}})  :h(RecommendTab,{recs:recs,onAdd:openRecEditor,onDismiss:dismissRec,added:added,dismissed:dismissed,dismissedTitles:dismissedTitles,allTasks:tasks,onRefresh:doRefresh,refreshing:refreshing,refreshMsg:refreshMsg,onSwitchTab:function(){setTab("tasks");}})
+tab==="tasks"?h(TaskApp,{tasks:tasks,setTasks:sT,loaded:loaded,save:save,onSwitchTab:function(){setTab("recommend");}})  :h(RecommendTab,{recs:recs,onAdd:openRecEditor,onDismiss:dismissRec,onComment:saveRecComment,recComments:recComments,added:added,dismissed:dismissed,dismissedTitles:dismissedTitles,allTasks:tasks,onRefresh:doRefresh,refreshing:refreshing,refreshMsg:refreshMsg,onSwitchTab:function(){setTab("tasks");}})
 ),
 editRec?h(AddTaskModal,{
   initial:{name:editRec.title||"",category:CK.indexOf(editRec.category)>=0?editRec.category:"その他",detail:editRec.desc||"",deadline:editRec.deadline||"",priority:editRec.priority||"🟡中",url:editRec.url||"",location:editRec.location||"",icon:editRec.icon||"",note:"おすすめから追加"},

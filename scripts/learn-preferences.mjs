@@ -124,8 +124,32 @@ async function main() {
     .map((t) => String(t.name || ''))
     .filter(Boolean);
 
-  console.log(`正例（おすすめから追加したタスク）: ${adopted.length}件`);
-  console.log(`負例（却下したタイトル）        : ${dismissed.length}件`);
+  /* ★アプリで付けた 👍 / 👎 ★
+     ここまでの材料はどちらも行動からの推測だった——タスク化したから当たり、
+     「−」を押したから外れ。しかし「−」は「いま忙しい」「もう知っている」でも
+     押される。逆に、良い提案でも今日は動けないだけで消すことがある。
+     👍/👎 は利用者が明示的に言った唯一の信号なので、推測より重い。
+
+     一言を書いてくれた場合は、その文もタイトルに足して数える。
+     「サウナはもう十分」の「サウナ」のような、次のおすすめにも現れる語を
+     拾えるため。「興味ない」のような汎用語は次のタイトルに出てこないので
+     効かないだけで、害はない。 */
+  const comments = ((await fbGet(`${BASE}/recComments`).catch(() => [])) || []).filter(Boolean);
+  const votedUp = comments.filter((c) => c.vote > 0).map((c) => `${c.title || ''} ${c.text || ''}`.trim()).filter(Boolean);
+  const votedDown = comments.filter((c) => c.vote < 0).map((c) => `${c.title || ''} ${c.text || ''}`.trim()).filter(Boolean);
+
+  // 明示的な信号は重く見たいので、同じ文を2回数える。学習は出現率の比で
+  // 効くので、回数を増やすことがそのまま重みになる。3回以上にすると
+  // 1件の 👎 でその語が支配的になり、行動から得た材料が埋もれる。
+  const WEIGHT = 2;
+  for (let i = 0; i < WEIGHT; i += 1) {
+    adopted.push(...votedUp);
+    dismissed.push(...votedDown);
+  }
+
+  console.log(`正例（おすすめから追加したタスク）: ${adopted.length - votedUp.length * WEIGHT}件`);
+  console.log(`負例（却下したタイトル）        : ${dismissed.length - votedDown.length * WEIGHT}件`);
+  console.log(`アプリでの評価                  : 👍 ${votedUp.length}件 / 👎 ${votedDown.length}件（各 ${WEIGHT} 倍で加算）`);
   console.log('※ 中身はログに出しません（public リポジトリのため）\n');
 
   if (adopted.length < 5) {
