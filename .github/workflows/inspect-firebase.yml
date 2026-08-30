@@ -23,6 +23,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      # ルールが「いま」閉じているかを毎回確かめる。
+      # 公開したのは 2026-08-23（ad65d8b）だが、Console で誰かが緩めても
+      # アプリ側は正常に見えるため、閉じている証拠は別に取る必要がある。
+      # 本文は絶対に出さない（漏れていた場合、ログに中身を書くことになるため）。
+      - name: Verify the rules are closed (unauthenticated must be denied)
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            "$FIREBASE_URL/users/yokota/tasks.json?shallow=true&limitToFirst=1&orderBy=%22%24key%22")
+          echo "未認証の読み取り: HTTP $code"
+          if [ "$code" = "401" ]; then
+            echo "✅ 閉じています（Permission denied）"
+          elif [ "$code" = "200" ]; then
+            echo "❌ 未認証で読めています。ルールが公開されていないか、緩められています。"
+            echo "   docs/firebase-security.md の手順でルールを再公開してください。"
+            exit 1
+          else
+            echo "⚠️ 想定外の応答です。判定できないので失敗扱いにします。"
+            exit 1
+          fi
+
       - name: Inspect structure (read-only)
         run: node scripts/inspect-tasks.mjs
 
