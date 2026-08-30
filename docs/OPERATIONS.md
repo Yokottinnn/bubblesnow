@@ -30,15 +30,38 @@ $ curl -sS "$HTTPS_PROXY/__agentproxy/status"
 | 任意サイトの取得（WebFetch） | ❌ 403 | ✅ |
 | **Firebase Realtime DB** | ❌ **403** | ✅ |
 
-**結論: Firebase への読み書きは GitHub Actions を踏み台にする。**
-これによりMacを開かずスマホだけで完結する（＝移管の当初ゴールを維持できる）。
+**★2026-08-30 追記: この踏み台はもう使えない★**
+
+上の表は「到達できるか」の話で、いまも正しい。変わったのは**鍵**のほう。
+
+2026-08-23 に Firebase のルールを閉じた（`firebase/database.rules.json`、3アカウントの
+uid のみ許可）。以降、読み書きには database secret が要る。そして secret は
+**`mac/.env` にしか無い**。public リポジトリなので GitHub Secrets には置かない方針で、
+`FIREBASE_SECRET` は未設定のまま（2026-08-30 の run #6 のログで空だと確認済み）。
+
+つまり **Actions ランナーは Firebase に到達はできるが、認証できない**。
+`inspect-firebase.yml` の読み取り2ステップは鍵が無いとスキップされる。
 
 ```
 スマホのClaude Code（クラウド）
   │ git push
   ▼
-GitHub Actions ランナー ── ここは制限なし ──▶ Firebase Realtime DB
+GitHub Actions ランナー ──▶ Firebase  ❌ 401（鍵が無い）
+
+Mac（~/bubblesnow、mac/.env に鍵）──▶ Firebase  ✅
 ```
+
+**いま Firebase を読み書きするなら Mac 側で実行する。** 日次バッチも Mac の launchd で
+回っている（`mac/run-daily.sh`）ので、この構成で困っていない。
+
+```bash
+cd ~/bubblesnow && set -a && . mac/.env && set +a && node scripts/inspect-tasks.mjs
+```
+
+鍵なしでもクラウドから確認できることがひとつある。**ルールが閉じているかどうか**。
+`inspect-firebase.yml` を手動実行すると未認証で叩き、401 以外なら落ちる。
+Console でルールを緩めてもアプリ側は認証済みなので正常に見えてしまうため、
+「アプリが動いている」を「閉じている」の証拠にしないための確認。
 
 なお、ローカルPC（Mac）でセッションを起動した場合はこの制限を受けないため、Firebase を
 直接叩ける。Mac上のファイル（NY2Do フォルダの `_headers` や `make-body-v6-nocite.txt` 等、
@@ -178,9 +201,18 @@ Actions のログを直接読んで原因を特定できる（GitHub APIには�
   更新しなくなった後もエラーは出ず、押しても何も起きない状態が続いていた。
   webhook の返事を待つための 3 秒の待機も一緒に外したので、押した直後に読み直す。
 
-  なお **recs を生成する仕組みは現在どこにも無い**。Make.com は 08-09 以降
-  `recommendations` を更新しておらず（08-15 時点で 9 件・ID も `r246〜r254` のまま）、
-  代替の `daily-recs.yml` はまだ API で成功していない。**表示は正常だが中身は増えない。**
+  ~~なお **recs を生成する仕組みは現在どこにも無い**~~
+  **2026-08-30 時点では解消済み。** recs は Mac の日次バッチが生成している。
+  Claude API は使わない（＝$0）。`mac/run-daily.sh` が毎日 00:00 に launchd から起動し、
+
+  | 順 | スクリプト | 役割 |
+  |---|---|---|
+  | ① | `scripts/collect-x.mjs` | X から収集（headless Chrome で検索。初回実測 77件） |
+  | ①' | `scripts/collect-gmail.mjs` | Gmail の `category:promotions` から収集（鍵がある時だけ） |
+  | ②' | `scripts/learn-preferences.mjs` | 採用/不採用から重みを学習（2〜3文字 n-gram） |
+  | ③ | `scripts/build-recs.mjs` | 選別・整形して Firebase に書き込み（LLMなし） |
+
+  `scripts/generate-recs.mjs`（Claude API 版）は残してあるが、日次では使っていない。
 
 - Actions から recs を書くときは `users/yokota/recommendations` を**全置換**で書く点に注意。
   `scripts/push-recs.mjs` は既存を消さず末尾に足すが、`generate-recs.mjs` は置き換える。
