@@ -45,8 +45,23 @@ echo "  version: $("$CLAUDE" --version 2>&1 | head -1)"
 # ここで claude の出力を捨ててはいけない。最初の版は 2>&1 で握りつぶして
 # 「未ログインの可能性」と推測を出していたが、それでは原因が分からず、
 # 見当違いの対処に時間を使わせるだけだった。理由は claude 自身が知っている。
-RC_OUT="$("$CLAUDE" remote-control --help 2>&1)"
+# 常駐と同じ条件で確かめる。plist は env -u で推論専用の資格情報を外して
+# 起動するので、素の claude で判定すると「実際には動くのにチェックだけ落ちる」。
+# 最初の版がまさにそれで、環境変数さえ外せば通る状態を「使えません」と
+# 突き返していた。チェックは実行時を真似ないと意味がない。
+RC_OUT="$(/usr/bin/env -u ANTHROPIC_API_KEY -u CLAUDE_CODE_OAUTH_TOKEN \
+  "$CLAUDE" remote-control --help 2>&1)"
 RC_CODE=$?
+
+# 通ったとしても、環境変数が残っていること自体は伝えておく。
+# 常駐は無事でも、ターミナルで claude を直に使うときは同じ制限を受ける。
+if [ "$RC_CODE" -eq 0 ] && [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  echo "  ℹ️ CLAUDE_CODE_OAUTH_TOKEN が環境変数にあります。"
+  echo "     常駐は env -u で外して起動するので問題ありません。"
+  echo "     ただしターミナルで claude を直に使うときは推論専用のままです。"
+  echo "     出所を探すなら: ~/.zshenv ~/.zprofile ~/.profile / launchctl getenv CLAUDE_CODE_OAUTH_TOKEN"
+fi
+
 if [ "$RC_CODE" -ne 0 ]; then
   echo "❌ Remote Control を使える状態ではありません。"
   echo
@@ -59,21 +74,13 @@ if [ "$RC_CODE" -ne 0 ]; then
   # 推論専用にスコープが絞られていて、Remote Control には使えない。
   # 見た目には「ログイン済み」なので、これが理由だと気づきにくい。
   if printf '%s' "$RC_OUT" | grep -q "full-scope login token"; then
-    echo "  → 長期トークン（claude setup-token / CLAUDE_CODE_OAUTH_TOKEN）で"
-    echo "     認証されています。これは推論専用で Remote Control には使えません。"
+    # 環境変数は既に外したうえで失敗している。つまり保存済みの資格情報
+    # そのものが長期トークン。ここは claude auth login でしか直らない。
+    echo "  → 保存されている資格情報が長期トークンです。"
+    echo "     環境変数は外して試したうえで拒否されているので、"
+    echo "     資格情報そのものを入れ替える必要があります。"
     echo
-    echo "     1. claude auth login"
-    if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
-      echo "     2. CLAUDE_CODE_OAUTH_TOKEN が環境変数にあります。"
-      echo "        残っていると再ログインしても上書きされるので、"
-      echo "        ~/.zshrc などから外してターミナルを開き直してください。"
-      echo "     3. bash mac/install-remote-control.sh"
-    else
-      echo "     2. bash mac/install-remote-control.sh"
-      echo
-      echo "     （CLAUDE_CODE_OAUTH_TOKEN は環境変数には無いので、"
-      echo "       保存済みの資格情報を差し替えるだけで済みます）"
-    fi
+    echo "     claude auth login"
     echo
     echo "  日次バッチは claude を使わない（node だけ）ので、"
     echo "  ログインを切り替えても mac/run-daily.sh には影響しません。"

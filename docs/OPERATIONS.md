@@ -262,9 +262,19 @@ for security reasons. Run `claude auth login` to use Remote Control.
 Remote Control には使えない。見た目には普通にログインできていて、対話も
 コミットも問題なくできるので、これが理由だと気づきにくい。API キーとも別物。
 
-`claude auth login` で入り直す。`CLAUDE_CODE_OAUTH_TOKEN` が環境変数に
-残っていると再ログインしても上書きされるので、その場合は `~/.zshrc` などから
-外してターミナルを開き直すこと。
+`claude auth login` で入り直す。
+
+**環境変数のほうが優先される。** `CLAUDE_CODE_OAUTH_TOKEN` がシェルに残っていると、
+再ログインしても `claude` はそちらを使い続ける。この Mac が実際にそうだった
+（`~/.zshrc` には無く、`~/.zshenv` や `launchctl setenv` の側にある）。探すなら:
+
+```bash
+grep -rn CLAUDE_CODE_OAUTH_TOKEN ~/.zshenv ~/.zshrc ~/.zprofile ~/.profile 2>/dev/null
+launchctl getenv CLAUDE_CODE_OAUTH_TOKEN
+```
+
+ただし **常駐のためだけなら外さなくてよい**。plist が `env -u` で外して起動する。
+外す必要があるのは、ターミナルで `claude` を直に使いたいときだけ。
 
 **日次バッチには影響しない。** `mac/run-daily.sh` は claude を使わず node だけで
 動くので、ログインを切り替えても recs の生成は変わらない。
