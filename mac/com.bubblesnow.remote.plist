@@ -8,8 +8,16 @@
   <!-- Claude Code をサーバーモードで常駐させる。
        スマホ／クラウドのセッションはここに繋いで Mac を動かす。
        Mac から外向きに接続するので、ポート開放もファイアウォールの変更も要らない。 -->
+  <!-- env -u で API キーの環境変数を確実に外す。
+       Remote Control はサブスクリプションのログインが必要で、API キーがあると
+       claude はそちらで認証してしまい対象外になる。launchd はシェルの環境を
+       継承しないので普通は入り込まないが、launchctl setenv で仕込まれている
+       場合もあるため、ここで断ち切っておく。 -->
   <key>ProgramArguments</key>
   <array>
+    <string>/usr/bin/env</string>
+    <string>-u</string>
+    <string>ANTHROPIC_API_KEY</string>
     <string>__CLAUDE__</string>
     <string>remote-control</string>
     <string>--name</string>

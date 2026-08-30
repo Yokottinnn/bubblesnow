@@ -37,11 +37,38 @@ if [ -z "$CLAUDE" ]; then
 fi
 echo "  claude: $CLAUDE"
 
-# ログイン済みかを先に見る。未ログインのまま常駐させると
-# KeepAlive で失敗し続け、ログを読むまで原因が分からない。
-if ! "$CLAUDE" remote-control --help >/dev/null 2>&1; then
-  echo "❌ Remote Control を使える状態ではありません（未ログインの可能性）。"
-  echo "   claude を起動して /login を済ませてから、もう一度実行してください。"
+echo "  version: $("$CLAUDE" --version 2>&1 | head -1)"
+
+# 常駐させる前に使える状態かを見る。未ログインのまま KeepAlive に入れると
+# 失敗し続け、ログを読むまで原因が分からない。
+#
+# ここで claude の出力を捨ててはいけない。最初の版は 2>&1 で握りつぶして
+# 「未ログインの可能性」と推測を出していたが、それでは原因が分からず、
+# 見当違いの対処に時間を使わせるだけだった。理由は claude 自身が知っている。
+RC_OUT="$("$CLAUDE" remote-control --help 2>&1)"
+RC_CODE=$?
+if [ "$RC_CODE" -ne 0 ]; then
+  echo "❌ Remote Control を使える状態ではありません。"
+  echo
+  echo "  --- claude の返答 ---"
+  printf '%s\n' "$RC_OUT" | head -20 | sed 's/^/  /'
+  echo "  ---------------------"
+  echo
+
+  # 一番ありがちな原因。Remote Control はサブスクリプションのログインが要る。
+  # APIキーが環境にあると claude はそちらで認証し、/login 済みでも対象外になる。
+  if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    echo "  ⚠️ ANTHROPIC_API_KEY が設定されています。"
+    echo "     Remote Control は API キーでは使えません（サブスクリプションのログインが必要）。"
+    echo "     シェルの設定（~/.zshrc など）から外すか、この行だけ外して試してください:"
+    echo
+    echo "       env -u ANTHROPIC_API_KEY claude remote-control --help"
+    echo
+  else
+    echo "  ANTHROPIC_API_KEY は設定されていません。"
+    echo "  claude を起動して /login を済ませてから、もう一度実行してください。"
+    echo "  すでにログイン済みなら、上の返答をそのまま共有してください。"
+  fi
   exit 1
 fi
 
