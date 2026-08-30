@@ -108,8 +108,34 @@ sed -e "s|__REPO__|$REPO|g" \
     -e "s|__PATH__|$FULL_PATH|g" \
     "$HERE/$LABEL.plist" > "$DEST"
 
-launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null
-launchctl bootstrap "gui/$(id -u)" "$DEST" || { echo "❌ 登録に失敗しました"; exit 1; }
+UID_="$(id -u)"
+
+# bootout は非同期。返ってきた時点ではまだ後片付けが終わっておらず、
+# そこへ bootstrap を撃つと "Bootstrap failed: 5: Input/output error" になる。
+# 実際にこれで登録に失敗した。しかも bootout 自体は効いているので、
+# 「動いていた常駐を落としたうえで入れ直せない」という一番まずい終わり方をする。
+# 消えるまで待ってから入れる。
+launchctl bootout "gui/$UID_/$LABEL" 2>/dev/null
+for i in $(seq 1 20); do
+  launchctl print "gui/$UID_/$LABEL" >/dev/null 2>&1 || break
+  sleep 0.5
+done
+
+BOOT_OUT="$(launchctl bootstrap "gui/$UID_" "$DEST" 2>&1)"
+if [ $? -ne 0 ]; then
+  # 待っても消えていない＝まだ読み込まれている。plist は今書き直したので、
+  # 入れ直す代わりに再起動させれば同じ状態になる。
+  if launchctl print "gui/$UID_/$LABEL" >/dev/null 2>&1; then
+    echo "  既に読み込まれています。新しい設定で再起動します"
+    launchctl kickstart -k "gui/$UID_/$LABEL" >/dev/null 2>&1 \
+      || { echo "❌ 再起動に失敗しました"; printf '%s\n' "$BOOT_OUT" | sed 's/^/  /'; exit 1; }
+  else
+    echo "❌ 登録に失敗しました"
+    printf '%s\n' "$BOOT_OUT" | sed 's/^/  /'
+    echo "  plist: $DEST"
+    exit 1
+  fi
+fi
 
 echo "✅ 登録しました: $DEST"
 echo "   ログイン時に自動起動し、落ちても起こし直します。"

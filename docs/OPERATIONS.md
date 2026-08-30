@@ -288,6 +288,7 @@ launchctl getenv CLAUDE_CODE_OAUTH_TOKEN
 | | |
 |---|---|
 | 状態を見る | `launchctl print gui/$(id -u)/com.bubblesnow.remote \| head -20` |
+| 本当に常駐か | `ps -eo pid,ppid,comm \| grep [c]laude` の **PPID が 1**（launchd が親）なら常駐 |
 | ログ | `tail -f mac/logs/remote.out.log` |
 | 一時停止 | `launchctl bootout gui/$(id -u)/com.bubblesnow.remote` |
 
@@ -297,3 +298,23 @@ launchctl getenv CLAUDE_CODE_OAUTH_TOKEN
 `never_connected`（`recoverable: false`）で落ちる。繋がりかけて落ちるので
 「Mac が寝ている」のか「Claude Code が起動していない」のか紛らわしいが、
 **この症状は後者**。実際 2026-08-30 にこれで Gmail のアカウント数を確認できなかった。
+
+### 入れ直しで踏んだ落とし穴
+
+`launchctl bootout` は**非同期**で、返ってきた時点では後片付けが終わっていない。
+そこへ `bootstrap` を撃つと `Bootstrap failed: 5: Input/output error` になる。
+
+これは単なる失敗より悪い。**bootout 自体は効いている**ので、
+「動いていた常駐を落としたうえで入れ直せない」という終わり方をする。
+2026-08-30 に実際にこれを踏んだ。
+
+`install-remote-control.sh` は消えるまで待ってから入れ、それでも読み込まれて
+いれば `kickstart -k` で再起動に切り替える。失敗したときは launchctl の
+エラー本文をそのまま出す。
+
+### 「✅ 常駐しています」を鵜呑みにしない
+
+初回の実行はこの表示を出したが、18分後の点検では `Could not find service` で
+未読み込みだった。表示だけでは足りない。**`ps` の PPID が 1 であること**を
+確かめること。launchd が親でなければ、それは手動起動のプロセスで、
+再起動すれば消える。
