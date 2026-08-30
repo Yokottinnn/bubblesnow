@@ -27,6 +27,53 @@ mkdir -p "$HERE/logs"
 # 確かめたいときだけ RECS_MODE=dry-run を付ける。
 MODE="${RECS_MODE:-live}"
 
+# 実行した証拠をリポジトリに残す。
+#
+# クラウドのセッションは Firebase の鍵を持たず（鍵は mac/.env だけ）、
+# Mac にも届かない（SSH 不可、Remote Control は Mac 側が起動していないと繋がらない）。
+# つまり「昨夜動いたのか」を確かめる手段が無く、実際にそれで、
+# 既に終わっている作業を未完了として報告する事故が起きた。
+# GitHub になら双方から届くので、そこを合流点にする。
+#
+# 出すのは件数だけ。中身は書かない（public リポジトリのため）。
+# 失敗した実行こそ知りたいので、途中で落ちても EXIT で必ず通る。
+STATUS="中断（原因不明）"
+heartbeat() {
+  # trap は cd より前に仕掛けてある（cd 自体が失敗した場合も記録したいため）ので、
+  # ここで自力でリポジトリに入る。入れないなら何もしない。
+  cd "$REPO" 2>/dev/null || return 0
+
+  HEARTBEAT_STATUS="$STATUS" \
+  HEARTBEAT_MODE="$MODE" \
+  HEARTBEAT_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+    node scripts/write-heartbeat.mjs || true
+
+  # mac/last-run.md だけを対象にする。収集物は .gitignore 済みだが、
+  # 明示的に指定しておけば将来 ignore が漏れても巻き込まない。
+  git diff --quiet -- mac/last-run.md 2>/dev/null
+  local changed=$?
+  local untracked
+  untracked="$(git ls-files --others --exclude-standard -- mac/last-run.md)"
+  [ "$changed" -eq 0 ] && [ -z "$untracked" ] && return 0
+
+  git add mac/last-run.md
+  git -c user.name="BubblesNow daily" -c user.email="noreply@localhost" \
+    commit -q -m "Record the daily run ($(date '+%Y-%m-%d'))" -- mac/last-run.md || return 0
+
+  # 昼間にクラウド側が main を進めていると push は弾かれる。
+  # そこで諦めると心拍が溜まり続け、翌日の pull --ff-only も通らなくなって
+  # 「ずっと動いていないように見える」状態に陥る。一度だけ rebase して押し直す。
+  if ! git push -q origin main 2>/dev/null; then
+    if git -c user.name="BubblesNow daily" -c user.email="noreply@localhost" \
+         pull --rebase -q origin main 2>/dev/null && git push -q origin main 2>/dev/null; then
+      echo "  心拍: rebase して push しました"
+    else
+      echo "  ⚠️ 心拍を push できませんでした（次回に持ち越します）"
+    fi
+  fi
+}
+trap heartbeat EXIT
+
 echo ""
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') 日次バッチ開始（mode=${MODE}）==="
 
@@ -47,6 +94,7 @@ fi
 echo ""
 echo "--- ① 収集 ---"
 if ! node scripts/collect-x.mjs; then
+  STATUS="異常終了（① X の収集）"
   echo "❌ 収集に失敗しました。選別には進みません。"
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') 異常終了 ==="
   exit 1
@@ -74,11 +122,13 @@ node scripts/learn-preferences.mjs || echo "  ⚠️ 学習に失敗しました
 echo ""
 echo "--- ③ 選別・整形 ---"
 if ! MODE="$MODE" node scripts/build-recs.mjs; then
+  STATUS="異常終了（③ 選別・整形）"
   echo "❌ 選別・整形に失敗しました。"
   echo "   材料はあるので collected-x.json を見れば原因を追えます。"
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') 異常終了 ==="
   exit 1
 fi
 
+STATUS="正常終了"
 echo ""
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') 正常終了 ==="
