@@ -92,30 +92,32 @@ async function main() {
   const x = await counts('collected-x.json');
   const xMeta = await meta('collected-x.json');
   const gmail = await counts('collected-gmail.json');
+  const gmailImap = await counts('collected-gmail-imap.json');
   const learn = await counts('learned-weights.json');
   const built = await length('recs-built-preview.json');
 
-  /* Gmail は「設定されていない」「今回採れなかった」「採れた」を区別する。
-     どれも対応が違うので、まとめて「不明」にしない。 */
+  /* Gmail は2経路を併用する（OAuth / IMAP）。**経路ごとに出す。**
+     合算して1行にすると、片方が死んでももう片方の件数で健全に見えてしまう。
+     どちらが倒れたかが分からなければ、直しようもない。 */
   const gmailMeta = await meta('collected-gmail.json');
-  const configured = process.env.GMAIL_IMAP_ACCOUNTS || process.env.GMAIL_REFRESH_TOKENS;
-  let gmailLine;
-  if (!gmail || gmailMeta.stale) {
-    if (!configured) {
-      gmailLine = '未設定のため省略（docs/gmail-setup.md）';
-    } else if (gmail && gmailMeta.stale) {
-      // 前回のファイルが残っているだけ。件数を書くと今日の成果に見えるので書かない。
-      // 「日」で丸めると 23 時間前が「0 日前」になって意味が通らない。時間で書く。
-      gmailLine = `⚠️ 今回は採れず（残っているのは ${age(gmailMeta.ageH)}のファイル）`;
-    } else {
-      gmailLine = '⚠️ 今回は採れず（collected-gmail.json が無い）';
+  const gmailImapMeta = await meta('collected-gmail-imap.json');
+
+  function routeLine(c, m, configured, label) {
+    if (!configured) return null;                       // その経路は使っていない
+    if (!c || m.stale) {
+      return c && m.stale
+        ? `⚠️ 今回は採れず（残っているのは ${age(m.ageH)}のファイル）`
+        : '⚠️ 今回は採れず';
     }
-  } else {
-    const ok = (gmail.accounts ?? 0) - (gmail.failures ?? 0);
-    const via = gmailMeta.method === 'imap' ? 'IMAP' : gmailMeta.method === 'oauth' ? 'OAuth' : '経路不明';
-    gmailLine = `${via}: ${n(ok)} / ${n(gmail.accounts)} アカウント成功、${n(gmail.total)}件`;
-    if (gmail.failures) gmailLine += `（失敗 ${gmail.failures}）`;
+    const ok = (c.accounts ?? 0) - (c.failures ?? 0);
+    let line = `${n(ok)} / ${n(c.accounts)} アカウント成功、${n(c.total)}件`;
+    if (c.failures) line += `（失敗 ${c.failures}）`;
+    return line;
   }
+
+  const oauthLine = routeLine(gmail, gmailMeta, process.env.GMAIL_REFRESH_TOKENS, 'OAuth');
+  const imapLine = routeLine(gmailImap, gmailImapMeta, process.env.GMAIL_IMAP_ACCOUNTS, 'IMAP');
+  const configured = process.env.GMAIL_IMAP_ACCOUNTS || process.env.GMAIL_REFRESH_TOKENS;
 
   /* 見出しに劣化を出す。
      2026-08-31 の実行は 3 アカウント中 2 つが失敗したのに、見出しは
@@ -123,10 +125,14 @@ async function main() {
      結果の欄だけ見て健全だと思うのが普通の読み方で、実際そうなりかけた。
      一部でも落ちていれば見出しに出す。 */
   const notes = [];
-  if (gmail && !gmailMeta.stale && gmail.failures) {
-    notes.push(`⚠️ Gmail ${gmail.failures}/${n(gmail.accounts)} アカウント失敗`);
+  for (const [label, c, m, cfg] of [
+    ['OAuth', gmail, gmailMeta, process.env.GMAIL_REFRESH_TOKENS],
+    ['IMAP', gmailImap, gmailImapMeta, process.env.GMAIL_IMAP_ACCOUNTS],
+  ]) {
+    if (!cfg) continue;
+    if (!c || m.stale) notes.push(`⚠️ Gmail(${label}) 収集できず`);
+    else if (c.failures) notes.push(`⚠️ Gmail(${label}) ${c.failures}/${n(c.accounts)} アカウント失敗`);
   }
-  if (configured && (!gmail || gmailMeta.stale)) notes.push('⚠️ Gmail 収集できず');
   if (!x || xMeta.stale) notes.push('⚠️ X 収集できず');
   const degraded = notes.length ? `　${notes.join(' / ')}` : '';
 
@@ -147,7 +153,7 @@ async function main() {
 | 材料 | 結果 |
 |---|---|
 | X | ${x && !xMeta.stale ? `${n(x.total)}件（検索 ${n(x.search)} / プロフィール ${n(x.profile)}）` : '⚠️ 今回は採れず'} |
-| Gmail | ${gmailLine} |
+${oauthLine ? `| Gmail (OAuth) | ${oauthLine} |` : ''}${oauthLine && imapLine ? '\n' : ''}${imapLine ? `| Gmail (IMAP) | ${imapLine} |` : ''}${!configured ? '| Gmail | 未設定のため省略（docs/gmail-setup.md） |' : ''}
 
 ## 学習
 

@@ -41,7 +41,10 @@ const MAX_PER_CATEGORY = Number(process.env.MAX_PER_CATEGORY || 8);
 // 一覧をスクロールして眺められる量として 60 を既定にした。
 const MAX_TOTAL = Number(process.env.MAX_TOTAL || 60);
 
-const SOURCE_FILES = ['collected-x.json', 'collected-sources.json', 'collected-gmail.json'];
+// Gmail は2経路ある（OAuth / IMAP）。両方走らせて合流させるので両方読む。
+// 同じキャンペーンが複数アカウントに届いていても、下でタイトル重複を除く。
+const SOURCE_FILES = ['collected-x.json', 'collected-sources.json',
+  'collected-gmail.json', 'collected-gmail-imap.json'];
 // learn-preferences.mjs が書き出す学習結果。無ければ手書きの重みだけで動く。
 const WEIGHTS_FILE = 'learned-weights.json';
 // 学習分がスコア全体を支配しないための上限。手書きの信号は「行動できるか」を

@@ -104,47 +104,59 @@ fi
 # ── ①' Gmail から収集 ──
 # 未設定なら丸ごと飛ばす。X だけでも成立するので、ここで止めない。
 #
-# 取り方が2通りあり、**両方あれば OAuth を先に試して、駄目なら IMAP に落ちる**。
-#   GMAIL_REFRESH_TOKENS … OAuth。いま動いているのでこちらが第一候補
-#   GMAIL_IMAP_ACCOUNTS  … アプリパスワード + IMAP。失効しないので受け皿にする
+# ★フォールバックではなく併用★
+#   当初は「OAuth を試して駄目なら IMAP」にしていたが、それだと
+#   IMAP に落ちた夜は OAuth 側にしか無いアカウントが丸ごと落ちる。
+#   実際 daredemosanka@gmail.com は高度な保護機能でアプリパスワードを
+#   発行できず、OAuth でしか読めない。片方に寄せると必ずどこかが欠ける。
 #
-# 順番に意味がある。OAuth は同意画面がテストモードだとトークンが7日で失効し、
-# 本番でも Google の方針変更を受けうる。そのとき収集が丸ごと止まるのを避けたい。
-# 逆に IMAP を先にすると、いま確実に動いている経路をわざわざ後回しにすることになる。
-# 動いているほうを使い、倒れたときだけ乗り換える。
-GMAIL_ORDER=""
-[ -n "${GMAIL_REFRESH_TOKENS:-}" ] && GMAIL_ORDER="scripts/collect-gmail.mjs"
-if [ -n "${GMAIL_IMAP_ACCOUNTS:-}" ]; then
-  GMAIL_ORDER="${GMAIL_ORDER:+$GMAIL_ORDER }scripts/collect-gmail-imap.mjs"
+#   両方走らせて、build-recs.mjs が2つのファイルを材料として読む。
+#   同じキャンペーンが複数アカウントに届いていても、タイトルで重複を除く。
+#
+#   GMAIL_REFRESH_TOKENS … OAuth。同意画面がテストモードだと7日で失効する
+#   GMAIL_IMAP_ACCOUNTS  … アプリパスワード + IMAP。失効しない
+GMAIL_TRIED=0
+GMAIL_OK=0
+
+if [ -n "${GMAIL_REFRESH_TOKENS:-}" ]; then
+  echo ""
+  echo "--- ①' Gmail から収集（OAuth）---"
+  GMAIL_TRIED=$((GMAIL_TRIED + 1))
+  if node scripts/collect-gmail.mjs; then
+    GMAIL_OK=$((GMAIL_OK + 1))
+  else
+    echo "  ⚠️ OAuth 側の収集に失敗しました"
+    echo "     invalid_grant なら docs/gmail-setup.md「失効したとき」を参照。"
+  fi
 fi
 
-if [ -n "$GMAIL_ORDER" ]; then
+if [ -n "${GMAIL_IMAP_ACCOUNTS:-}" ]; then
   echo ""
-  echo "--- ①' Gmail から収集 ---"
-  GMAIL_OK=0
-  # パスに空白は無いので、この単語分割は意図どおり。
-  for GMAIL_SCRIPT in $GMAIL_ORDER; do
-    echo "  → $GMAIL_SCRIPT"
-    if node "$GMAIL_SCRIPT"; then GMAIL_OK=1; break; fi
-    echo "  ⚠️ $GMAIL_SCRIPT は失敗しました"
-  done
-
-  if [ "$GMAIL_OK" -eq 0 ]; then
-    # 続行はする（X だけでも成立する）が、黙って続けない。
-    # 切れても日次は「X だけ」で正常終了してしまうので、
-    # ログを読む習慣が無い限り、連携が死んだことに何週間も気づけない。
-    # 心拍の見出しに出して、GitHub を見れば分かる状態にする。
-    GMAIL_WARN="（⚠️ Gmail の収集に失敗）"
-    echo "  ⚠️ Gmail の収集に全経路で失敗しました。X の材料だけで続けます"
-    echo "     invalid_grant なら docs/gmail-setup.md「失効したとき」を参照。"
-    if [ -z "${GMAIL_IMAP_ACCOUNTS:-}" ]; then
-      echo "     受け皿がありません。GMAIL_IMAP_ACCOUNTS を設定しておくと、"
-      echo "     OAuth が失効した日も収集が止まりません（docs/gmail-setup.md）。"
-    fi
+  echo "--- ①' Gmail から収集（IMAP）---"
+  GMAIL_TRIED=$((GMAIL_TRIED + 1))
+  if node scripts/collect-gmail-imap.mjs; then
+    GMAIL_OK=$((GMAIL_OK + 1))
+  else
+    echo "  ⚠️ IMAP 側の収集に失敗しました"
+    echo "     アプリパスワードの失効・2段階認証の変更を疑ってください。"
   fi
-else
+fi
+
+if [ "$GMAIL_TRIED" -eq 0 ]; then
   echo ""
   echo "--- ①' Gmail は未設定のため省略（docs/gmail-setup.md）---"
+elif [ "$GMAIL_OK" -eq 0 ]; then
+  # 全経路が落ちた。X の材料だけで続けるが、黙って続けない。
+  # ログを読む習慣が無い限り気づけないので、心拍の見出しに出す。
+  GMAIL_WARN="（⚠️ Gmail の収集に失敗）"
+  echo ""
+  echo "  ⚠️ Gmail は全経路で失敗しました。X の材料だけで続けます"
+elif [ "$GMAIL_OK" -lt "$GMAIL_TRIED" ]; then
+  # 片方だけ落ちた。もう片方で材料は入るが、放置すると気づかないまま
+  # 片肺運転が常態化する。心拍に出す。
+  GMAIL_WARN="（⚠️ Gmail の一部経路が失敗）"
+  echo ""
+  echo "  ⚠️ Gmail は ${GMAIL_OK}/${GMAIL_TRIED} 経路のみ成功しました"
 fi
 
 # ── ②' 学習 ──

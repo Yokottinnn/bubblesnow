@@ -47,6 +47,7 @@ const PORT = Number(process.env.GMAIL_IMAP_PORT || 993);
 const MAX_AGE_DAYS = Number(process.env.GMAIL_MAX_AGE_DAYS || 10);
 const PER_ACCOUNT = Number(process.env.GMAIL_PER_ACCOUNT || 40);
 const TIMEOUT_MS = Number(process.env.GMAIL_IMAP_TIMEOUT_MS || 30000);
+const OUT_FILE = 'collected-gmail-imap.json';
 
 // OAuth 版と同じ検索条件。X-GM-RAW は Gmail の検索構文をそのまま受ける。
 const QUERY = `category:promotions newer_than:${MAX_AGE_DAYS}d -is:chat`;
@@ -358,15 +359,20 @@ async function main() {
 
   // 判定より先に書く。採れた分を捨てず、古いファイルを残さないため
   // （理由は collect-gmail.mjs の同じ箇所に書いた）。
-  // 出力先も形も OAuth 版と同じ。build-recs.mjs は変更なしで読める。
-  await writeFile('collected-gmail.json', JSON.stringify({
+  //
+  // ★書き先は OAuth 版と分ける★
+  //   同じ collected-gmail.json に書くと、後から走ったほうが前を消す。
+  //   併用（OAuth と IMAP を両方走らせて合流させる）では、それぞれの
+  //   結果が残らないと片方のアカウントが丸ごと落ちる。
+  //   build-recs.mjs は両方を材料として読み、タイトルで重複を除く。
+  await writeFile(OUT_FILE, JSON.stringify({
     collectedAt: new Date().toISOString(),
     method: 'imap',
     query: QUERY,
     counts: { total: all.length, accounts: list.length, failures },
     items: all,
   }, null, 2));
-  console.log('📦 collected-gmail.json に保存');
+  console.log(`📦 ${OUT_FILE} に保存`);
 
   // 過半数が落ちたら失敗として返す。OAuth 版と同じ規則に揃える。
   if (failures * 2 > list.length) {
