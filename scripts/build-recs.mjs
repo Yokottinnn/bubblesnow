@@ -492,9 +492,27 @@ async function main() {
   const scored = [];
 
   for (const item of items) {
-    const key = norm(item.title);
+    /* ★照合は「保存する文字列」で行う★
+       ここは長く、素材（メール・X）の生タイトルで重複と却下を判定していた。
+       ところが実際に保存する rec のタイトルは toRec が toTaskTitle で
+       書き換えたもので、アプリが dismissedTitles に積むのもその書き換え後。
+       つまり **照合する文字列と、却下される文字列が別物** だった。
+
+       生タイトルは配信ごとに文言がぶれるので却下判定をすり抜け、
+       書き換え後は同じ文言に収束するのでアプリ側で完全一致に当たる。
+       結果、同じものが毎日作られてはアプリで黙って消えていた
+       （2026-08-31 の実測で 13件中 4件）。
+
+       既存 recs（seen）も書き換え後のタイトルを持っているので、
+       生タイトルで突き合わせても一致しないという同じずれがあった。 */
+    const finalTitle = toRec(item).title;
+    const key = norm(finalTitle);
     if (!key || seen.has(key)) { dropped.dup += 1; continue; }
-    if (isDismissed(item.title, dismissedTitles)) { dropped.dismissed += 1; continue; }
+    // 生と書き換え後の両方を見る。古い dismissedTitles には
+    // 生タイトルのまま積まれたものも混ざっているため。
+    if (isDismissed(finalTitle, dismissedTitles) || isDismissed(item.title, dismissedTitles)) {
+      dropped.dismissed += 1; continue;
+    }
     if (taskNames.includes(key)) { dropped.alreadyTask += 1; continue; }
     seen.add(key);
     const s = score(item);

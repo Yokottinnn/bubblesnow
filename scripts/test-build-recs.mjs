@@ -260,5 +260,30 @@ eq('却下リストが空でも壊れない',
 eq('null が混ざっていても落ちない',
   prune(pRecs, { dismissedIds: [null], dismissedTitles: [null, ''] }).length, 3);
 
+/* ── 却下判定は「保存する文字列」で行う ──
+   長く、素材の生タイトルで重複と却下を判定していた。実際に保存されるのは
+   toRec が書き換えたタイトルで、アプリが dismissedTitles に積むのもそちら。
+   生タイトルは書き換え後の部分文字列になることが多いので普段は当たるが、
+   **60字で切り詰められると当たらなくなる**。そこをすり抜けた rec が
+   毎日作られては、アプリ側の完全一致で黙って消えていた
+   （2026-08-31 の実測で 13件中 4件）。 */
+const longItem = {
+  title: '【期間限定】dポイント最大50%還元の超大型キャンペーンが本日より全国のドコモショップおよびオンラインで一斉スタート',
+  desc: 'エントリー必須です', category: 'お金', url: 'https://e.com/1',
+};
+const storedTitle = toRec(longItem).title;
+const dtStored = [storedTitle.trim().toLowerCase()];
+
+eq('切り詰めが起きると生タイトルでは却下に当たらない',
+  isDismissed(longItem.title, dtStored), false);
+eq('保存するタイトルなら却下に当たる',
+  isDismissed(storedTitle, dtStored), true);
+
+// 既存 recs との重複判定も、既存側は書き換え後を持っているので
+// 生タイトルのキーでは一致しない。
+eq('既存recsとの重複も保存タイトルでないと一致しない',
+  [storedTitle].map((t) => t.toLowerCase().replace(/[\s　]/g, '')).includes(
+    longItem.title.toLowerCase().replace(/[\s　]/g, '')), false);
+
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);
