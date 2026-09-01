@@ -388,11 +388,29 @@ export function assignIds(recs, existing, dismissedIds = []) {
 // ★溜まり続けないようにする★
 // 落とす順番に意味がある。まず「もう役に立たない」ものを消し、
 // それでも多いときだけ古い順に削る。新しさより有用性を優先する。
-export function prune(recs, { limit = MAX_TOTAL, today = new Date() } = {}) {
+export function prune(recs, {
+  limit = MAX_TOTAL, today = new Date(),
+  dismissedIds = [], dismissedTitles = [],
+} = {}) {
   const iso = today.toISOString().slice(0, 10);
 
+  /* ★却下済みを枠から外す★
+     アプリの dismissRec は dismissed / dismissedTitles に足すだけで、
+     recommendations からは消さない。一方ここは上限 60 で古い順に切る。
+     結果、2026-08-31 の実測では **60枠のうち 51枠（85%）が、
+     二度と表示されない rec で占められていた**。新しい rec が入る余地を
+     毎日削っていたのはこれ。
+     アプリが表示しないものを、ここで抱え続ける理由はない。 */
+  const deadIds = new Set(dismissedIds.filter(Boolean).map(String));
+  const deadTitles = new Set(dismissedTitles.filter(Boolean).map((t) => norm(t)));
+  const kept = recs.filter((r) => {
+    if (r?.id && deadIds.has(String(r.id))) return false;
+    if (r?.title && deadTitles.has(norm(r.title))) return false;
+    return true;
+  });
+
   // ① 締切を過ぎたものは、残しても押せない
-  const alive = recs.filter((r) => !r?.deadline || r.deadline >= iso);
+  const alive = kept.filter((r) => !r?.deadline || r.deadline >= iso);
 
   // ② 同じタイトルが増えたら新しい方を残す（後勝ち）。
   //    毎日同じキャンペーンが流れてくるので、これが効く。
@@ -542,7 +560,7 @@ async function main() {
   // 既存を消さず末尾に足す。アプリ側の .set() は全置換なので、ここで消すと復元できない。
   // ただし毎日 20件超が積まれるので、放っておくと1週間で200件を超える。
   // 一覧として使えなくなるだけでなく、既出除外の照合も重くなる。
-  const merged = prune(existing.concat(withIds));
+  const merged = prune(existing.concat(withIds), { dismissedIds, dismissedTitles });
   await fbPut(`${BASE}/recommendations`, merged);
   const removed = existing.length + withIds.length - merged.length;
   console.log(`\n✅ 書き込み完了: ${BASE}/recommendations（既存 ${existing.length} + 新規 ${withIds.length}${removed ? ` − 整理 ${removed}` : ''} = ${merged.length}件）`);

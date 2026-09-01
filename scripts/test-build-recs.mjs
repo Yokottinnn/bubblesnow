@@ -234,5 +234,31 @@ setLearned(null);
 const noLearn = score({ title: 'サウナが新規オープンします', category: 'おでかけ', url: 'https://e.com/1' });
 ok('学習結果が無くても動く', noLearn.total > 0 && !noLearn.reasons.some((r) => r.includes('過去の傾向')));
 
+/* ── prune が却下済みを枠から外すか ──
+   2026-08-31 の実測で、60枠のうち 51枠が「二度と表示されない rec」で
+   埋まっていた。アプリは却下しても recommendations から消さず、
+   ここは上限で古い順に切るだけだったため、新しい rec の入る余地が
+   毎日削られていた。ここが緩むと同じ詰まりに戻る。 */
+const pRecs = [
+  { id: 'r1', title: '却下済みのID' },
+  { id: 'r2', title: '却下済みのタイトル' },
+  { id: 'r3', title: '生きている' },
+];
+eq('却下を渡さなければ全部残る', prune(pRecs, { limit: 60 }).length, 3);
+
+const pKept = prune(pRecs, { limit: 60, dismissedIds: ['r1'], dismissedTitles: ['却下済みのタイトル'] });
+eq('ID で却下されたものを外す', pKept.some((r) => r.id === 'r1'), false);
+eq('タイトルで却下されたものを外す', pKept.some((r) => r.id === 'r2'), false);
+eq('生きているものは残る', pKept.some((r) => r.id === 'r3'), true);
+
+// アプリ側は trim+toLowerCase、build-recs は記号も落とす。物差しが違うので、
+// 空白や記号の有無で取りこぼさないことを確かめる。
+eq('空白の違いを吸収する',
+  prune([{ id: 'x', title: 'あ い う' }], { dismissedTitles: ['あいう'] }).length, 0);
+eq('却下リストが空でも壊れない',
+  prune(pRecs, { dismissedIds: [], dismissedTitles: [] }).length, 3);
+eq('null が混ざっていても落ちない',
+  prune(pRecs, { dismissedIds: [null], dismissedTitles: [null, ''] }).length, 3);
+
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);
