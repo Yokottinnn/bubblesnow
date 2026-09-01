@@ -250,32 +250,11 @@ sel?h(TaskDetail,{task:sel,onClose:function(){sS(null);},onComplete:complete,onD
 showAdd?h(AddTaskModal,{onClose:function(){sA(false);},onAdd:add}):null,
 showDone?h(CompletedPanel,{tasks:done,allTasks:tasks,onClose:function(){sD(false);},onRestore:restore}):null);}
 /* ── Recommend Tab ── */
-var INIT_RECS=[
-{id:"r1",title:"freeeカード請求 35,034円",desc:"3/16口座振替。口座残高を前日までに確認",category:"お金",source:"gmail",icon:"💳",priority:"🔴期限迫",deadline:"2026-03-15",url:""},
-{id:"r2",title:"FUNDINNO求人を確認・返信",desc:"鈴村さんから共有された求人を確認して返信",category:"キャリア・学び",source:"gmail",icon:"💼",priority:"🟡中",deadline:"2026-03-10",url:""},
-{id:"r3",title:"ビズリーチ スカウト返信",desc:"わたしのお教室 COO/CSO候補スカウトに返信",category:"キャリア・学び",source:"gmail",icon:"📩",priority:"🟡中",deadline:"2026-03-10",url:"https://www.bizreach.jp/"},
-{id:"r23",title:"スタクラ スカウト確認",desc:"3/7新着。ログインしてスカウト内容を確認・返信",category:"キャリア・学び",source:"gmail",icon:"🚀",priority:"🟡中",deadline:"2026-03-14",url:"https://startupclass.co.jp/"},
-{id:"r4",title:"OpenClaw WS準備 3/10",desc:"18:30〜 Crypto Lounge GOX 新宿。Docker環境を事前準備",category:"キャリア・学び",source:"calendar",icon:"🤖",priority:"🔴期限迫",deadline:"2026-03-10",url:"https://lu.ma/6f6gh7br"},
-{id:"r5",title:"税務相談の準備 3/13",desc:"辻・本郷税理士 11:00 Web会議。役員報酬減額の内容整理",category:"お金",source:"calendar",icon:"🧾",priority:"🔴期限迫",deadline:"2026-03-12",url:""},
-{id:"r6",title:"Marketing LEADERS Day4 3/13",desc:"15:00〜 渋谷東口ビル6F TWOSTONE&Sons",category:"キャリア・学び",source:"calendar",icon:"📣",priority:"🔴期限迫",deadline:"2026-03-13",url:"https://ticketdive.com/event/marketingleaders-day4"},
-{id:"r7",title:"眼科予約 3/14",desc:"12:00〜 眼科予約済み。保険証・診察券を準備",category:"ヘルスケア",source:"calendar",icon:"👁️",priority:"🔴期限迫",deadline:"2026-03-14",url:""},
-{id:"r8",title:"辻・本郷 初期面談 3/23",desc:"法人コミコミプランライト。16:00〜 Web会議",category:"お金",source:"calendar",icon:"🧾",priority:"🟡中",deadline:"2026-03-22",url:""},
-{id:"r9",title:"AI Meetup OpenClaw 3/22",desc:"13:00〜 SUMIDA INNOVATION CORE 錦糸町。ハンズオン",category:"キャリア・学び",source:"calendar",icon:"🤖",priority:"🟡中",deadline:"2026-03-21",url:"https://ai-meetup.connpass.com/event/385860/"},
-{id:"r10",title:"Vibe Codingスライド復習",desc:"AI Builders WS資料が共有済み。復習して実践に活かす",category:"キャリア・学び",source:"gmail",icon:"💻",priority:"🟢低",deadline:"2026-03-15",url:"https://tinyurl.com/vibecodetokyo"},
-{id:"r11",title:"DMM転送荷物の受取確認",desc:"3/4発送済み。届いたか確認",category:"契約・手続き",source:"gmail",icon:"📦",priority:"🟢低",deadline:"2026-03-10",url:""},
-{id:"r12",title:"高輪SAUNAS に行く",desc:"高輪GW駅直結。男5室・女3室。MIMUREエリア3月開業でフードも充実",category:"おでかけ",source:"instagram",icon:"♨️",priority:"🟢低",deadline:"2026-04-30",url:"https://www.newoman.jp/takanawa/"},
-{id:"r13",title:"サウナメッツァ大井町 3/28",desc:"大井町駅直結。サウナシュラン1位おおたか竜泉寺の湯の新業態",category:"おでかけ",source:"news",icon:"♨️",priority:"🟢低",deadline:"2026-04-30",url:"https://saunabrosweb.jp/news_2026saunaopen/2026/01/06/"},
-{id:"r24",title:"PARADISE 大手町",desc:"地上26階。25m水風呂・コワーキング・ジム。朝7時〜",category:"おでかけ",source:"instagram",icon:"♨️",priority:"🟢低",deadline:"2026-04-30",url:"https://spaworks.jp/article/2704"},
-{id:"r14",title:"NAKEDガウディ展 〜3/15",desc:"天王洲アイル寺田倉庫。ガウディ没後100年。終了間近！",category:"おでかけ",source:"news",icon:"🏛️",priority:"🔴期限迫",deadline:"2026-03-15",url:"https://www.walkerplus.com/event_list/03/ar0313/"},
-{id:"r15",title:"プラネタリウム モネ体験",desc:"コニカミノルタプラネタリアTOKYO。AI没入型モネ 〜5/31",category:"おでかけ",source:"instagram",icon:"🖼️",priority:"🟢低",deadline:"2026-05-31",url:"https://co-trip.jp/article/716874"},
-{id:"r16",title:"空山基 回顧展 京橋",desc:"CREATIVE MUSEUM TOKYO。aibo原画やエアロスミスジャケット",category:"おでかけ",source:"x",icon:"🎨",priority:"🟢低",deadline:"2026-05-31",url:"https://www.timeout.jp/tokyo/ja/art/exhibition-in-tokyo-in-march2026"},
-{id:"r17",title:"千鳥ヶ淵 さくらまつり",desc:"約230本の桜。ボートで水上お花見。夜桜ライトアップ",category:"おでかけ",source:"instagram",icon:"🌸",priority:"🟢低",deadline:"2026-04-22",url:"https://www.fashion-press.net/news/141723"},
-{id:"r18",title:"楽天スーパーSALE チェック",desc:"3月は楽天スーパーSALE。日用品まとめ買い",category:"ショッピング",source:"news",icon:"🛒",priority:"🟢低",deadline:"2026-03-15",url:"https://event.rakuten.co.jp/"},
-{id:"r19",title:"こたつ屋台フェス 町田 3/14-15",desc:"約40台のこたつで温かいグルメ。どて焼き・焼き芋",category:"グルメ",source:"x",icon:"🍢",priority:"🟢低",deadline:"2026-03-14",url:"https://report.iko-yo.net/articles/30558"},
-{id:"r20",title:"確定申告の還付金確認",desc:"e-Taxで還付金の振込状況を確認",category:"お金",source:"gmail",icon:"💰",priority:"🟢低",deadline:"2026-04-30",url:"https://www.e-tax.nta.go.jp/"},
-{id:"r21",title:"Zeabur $5クレジット活用",desc:"新規登録で$5分の無料クレジット。期限切れ前に試す",category:"キャリア・学び",source:"gmail",icon:"☁️",priority:"🟢低",deadline:"2026-04-30",url:"https://zeabur.com/"},
-{id:"r22",title:"Bright Data SERP API テスト",desc:"SERP APIエンドポイント準備完了。テスト実行してみる",category:"キャリア・学び",source:"gmail",icon:"🔍",priority:"🟢低",deadline:"2026-04-30",url:"https://brightdata.com/"}
-];
+/* INIT_RECS（初期おすすめ24件）は 2026-09-01 に削除した。
+   初期値として使われていたが、24件すべてが dismissed 済みで、
+   購読が届かないときも届いたときも画面は「新しいおすすめはありません」に
+   なっていた。失敗が0件に化ける原因そのものだったので、初期値は空にした。
+   読み込み状態は recsState（loading / ok / error）で区別する。 */
 /* http(s) は通常のリンク。message: は Gmail 由来のタスクを iOS の
    「メール」アプリで直接開くための Message-ID リンク（collect-gmail.mjs 参照）。
    javascript: など他のスキームは通さない。 */
@@ -284,6 +263,7 @@ var SRC={gmail:{label:"📧 Gmail",bg:"rgba(66,133,244,.15)",color:"#4285F4"},ca
 function RecommendTab(p){
 var recs=p.recs;var onAdd=p.onAdd;var onDismiss=p.onDismiss;var added=p.added;var dismissed=p.dismissed;var dismissedTitles=p.dismissedTitles||[];var allTasks=p.allTasks||[];var refreshMsg=p.refreshMsg||"";
 var onComment=p.onComment;var recComments=p.recComments||[];
+var recsState=p.recsState||"ok";
 /* コメント欄は一度に1枚だけ開く。スマホで複数開くと、どのカードに
    書いているのか分からなくなるため。 */
 var _co=useState(null),coId=_co[0],sCoId=_co[1];
@@ -322,7 +302,14 @@ h("button",{onClick:p.refreshing?void 0:p.onRefresh||function(){},style:{width:3
 )
 ),
 refreshMsg?h("div",{style:{textAlign:"center",fontSize:12,color:"rgba(255,255,255,.55)",padding:"6px 0 0"}},refreshMsg):null,
-visible.length===0?h("div",{style:{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",color:"rgba(255,255,255,.3)",padding:40}},h("div",{style:{fontSize:48,marginBottom:10}},"✨"),h("div",{style:{fontSize:15}},"新しいおすすめはありません")):
+visible.length===0?h("div",{style:{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",color:"rgba(255,255,255,.3)",padding:40,textAlign:"center"}},
+/* 「読み込み中」「読めなかった」「本当に0件」を別物として出す。
+   全部同じ「ありません」にしていたせいで、Firebase に5件あるのに
+   0件に見える状態を、誰も異常だと気づけなかった。 */
+h("div",{style:{fontSize:48,marginBottom:10}},recsState==="loading"?"⏳":recsState==="error"?"⚠️":"✨"),
+h("div",{style:{fontSize:15}},recsState==="loading"?"読み込み中...":recsState==="error"?"おすすめを読み込めませんでした":"新しいおすすめはありません"),
+recsState==="error"?h("div",{style:{fontSize:12,marginTop:8,lineHeight:1.6,color:"rgba(255,255,255,.35)"}},"🔄 を押すと読み直します。",h("br"),"続くようなら通信かログインの状態を確認してください。"):
+recsState==="ok"&&recs.length>0?h("div",{style:{fontSize:12,marginTop:8,color:"rgba(255,255,255,.25)"}},recs.length+"件すべて、追加済みか却下済みです"):null):
 h("div",{style:{flex:1,overflow:"auto",padding:"10px 16px 20px",scrollbarWidth:"none"}},
 visible.map(function(r){
 var dl=dL(r.deadline);
@@ -442,7 +429,13 @@ return null;
 function MainApp(p){
 var tab=p.tab,setTab=p.setTab;
 var _t=useState([]),tasks=_t[0],sT=_t[1];
-var _recs=useState(INIT_RECS),recs=_recs[0],sRecs=_recs[1];
+var _recs=useState([]),recs=_recs[0],sRecs=_recs[1];
+/* おすすめの読み込み状態。"loading" / "ok" / "error"。
+   ★これが無いと失敗が「0件」に化ける★ 以前は初期値が INIT_RECS（24件）で、
+   その24件は全部 dismissed 済みだったため、購読が届かなくても届いても
+   画面はどちらも「新しいおすすめはありません」になっていた。
+   Firebase には5件あるのに0件に見える、という状態を作っていたのがこれ。 */
+var _recsState=useState("loading"),recsState=_recsState[0],sRecsState=_recsState[1];
 var _added=useState([]),added=_added[0],sAdded=_added[1];
 var _dismissed=useState([]),dismissed=_dismissed[0],sDismissed=_dismissed[1];
 var _dismissedTitles=useState([]),dismissedTitles=_dismissedTitles[0],sDismissedTitles=_dismissedTitles[1];var _recComments=useState([]),recComments=_recComments[0],sRecComments=_recComments[1];
@@ -452,7 +445,19 @@ var unsub=Storage.subscribe("users/yokota/tasks",function(data){
 if(data){var raw=(Array.isArray(data)?data:Object.values(data)).filter(function(t){return t&&t.name;}).map(function(t){return t.status?t:Object.assign({},t,{status:t.done?"done":"active"});});var cm={"手続き・お金":"契約・手続き","キャリア":"キャリア・学び","学び":"キャリア・学び"};var arr=raw.map(function(t){return cm[t.category]?Object.assign({},t,{category:cm[t.category]}):t;});if(JSON.stringify(arr)!==JSON.stringify(raw))Storage.set("users/yokota/tasks",arr);sT(arr);}else{sT(IT);Storage.set("users/yokota/tasks",IT);}sL(true);
 });
 /* Load recs from Firebase if available */
-var unsub2=Storage.subscribe("users/yokota/recommendations",function(data){var arr=extractRecs(data);if(arr&&arr.length>0)sRecs(sanitizeRecs(arr));else if(!data){Storage.set("users/yokota/recommendations",INIT_RECS);}});
+var unsub2=Storage.subscribe("users/yokota/recommendations",function(data){
+var arr=extractRecs(data);
+if(arr&&arr.length>0){sRecs(sanitizeRecs(arr));sRecsState("ok");}
+else if(data==null){
+/* ノードが空。以前はここで INIT_RECS を書き戻していたが、それは
+   「読めなかったとき」にも走りうる経路で、実データ60件を固定の24件で
+   上書きしかねない。空は空として扱い、書き戻さない。 */
+sRecs([]);sRecsState("ok");
+}else{
+// 中身はあるのに形が読めない。0件と区別できるようにする。
+sRecs([]);sRecsState("error");
+}
+});
 var unsub3=Storage.subscribe("users/yokota/dismissed",function(data){if(data&&Array.isArray(data))sDismissed(data);});
 var unsub5=Storage.subscribe("users/yokota/recComments",function(data){if(Array.isArray(data))sRecComments(data);});
 var unsub4=Storage.subscribe("users/yokota/dismissedTitles",function(data){if(data&&Array.isArray(data)&&data.length>0)sDismissedTitles(data);else{var knownDismissedTitles=["ジョニー・デップ展","ジョニーデップ展","高輪saunas","nakedガウディ展","空山基 回顧展","空山基展","千鳥ヶ淵 さくらまつり","千鳥ヶ淵さくら","paradise 大手町","paradise大手町","プラネタリウム モネ","プラネタリウムモネ","楽天スーパーsale","楽天sale","こたつ屋台フェス町田","こたつフェス町田","サウナメッツァ大井町","サウナメッツァ大井町 3/28","freeeカード請求 35,034円","freeeカード請求","スタクラ スカウト確認","fundinno求人確認","ビズリーチスカウト","ビズリーチ スカウト返信"];sDismissedTitles(knownDismissedTitles);Storage.set("users/yokota/dismissedTitles",knownDismissedTitles);}});
@@ -536,7 +541,11 @@ sRefreshMsg("");
    一瞬すぎて「押しても何も起きない」ように見えていた。最低表示時間を作り、
    完了後に短いメッセージを出して「動いた」ことが分かるようにする。 */
 var minSpin=new Promise(function(res){setTimeout(res,500);});
-var fetchP=db?db.ref("users/yokota/recommendations").once("value").then(function(snap){var d=snap.val();var arr=extractRecs(d);if(arr&&arr.length>0)sRecs(sanitizeRecs(arr));return true;}).catch(function(){return false;}):Promise.resolve(false);
+var fetchP=db?db.ref("users/yokota/recommendations").once("value").then(function(snap){var d=snap.val();var arr=extractRecs(d);
+if(arr&&arr.length>0){sRecs(sanitizeRecs(arr));sRecsState("ok");}
+else if(d==null){sRecs([]);sRecsState("ok");}
+else{sRecs([]);sRecsState("error");}
+return true;}).catch(function(){sRecsState("error");return false;}):Promise.resolve(false);
 Promise.all([fetchP,minSpin]).then(function(r){
   sRefreshing(false);
   sRefreshMsg(r[0]?"✓ 更新しました":"更新に失敗しました");
@@ -546,7 +555,7 @@ Promise.all([fetchP,minSpin]).then(function(r){
 return h("div",{style:{position:"fixed",inset:0,display:"flex",flexDirection:"column",background:"linear-gradient(135deg,#0f0c29 0%,#1a1a3a 40%,#24243e 100%)",fontFamily:"'Outfit','Noto Sans JP',sans-serif",overflow:"hidden"}},
 /* Content - with bottom padding for footer */
 h("div",{style:{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}},
-tab==="tasks"?h(TaskApp,{tasks:tasks,setTasks:sT,loaded:loaded,save:save,onSwitchTab:function(){setTab("recommend");}})  :h(RecommendTab,{recs:recs,onAdd:openRecEditor,onDismiss:dismissRec,onComment:saveRecComment,recComments:recComments,added:added,dismissed:dismissed,dismissedTitles:dismissedTitles,allTasks:tasks,onRefresh:doRefresh,refreshing:refreshing,refreshMsg:refreshMsg,onSwitchTab:function(){setTab("tasks");}})
+tab==="tasks"?h(TaskApp,{tasks:tasks,setTasks:sT,loaded:loaded,save:save,onSwitchTab:function(){setTab("recommend");}})  :h(RecommendTab,{recs:recs,onAdd:openRecEditor,onDismiss:dismissRec,onComment:saveRecComment,recComments:recComments,recsState:recsState,added:added,dismissed:dismissed,dismissedTitles:dismissedTitles,allTasks:tasks,onRefresh:doRefresh,refreshing:refreshing,refreshMsg:refreshMsg,onSwitchTab:function(){setTab("tasks");}})
 ),
 editRec?h(AddTaskModal,{
   initial:{name:editRec.title||"",category:CK.indexOf(editRec.category)>=0?editRec.category:"その他",detail:editRec.desc||"",deadline:editRec.deadline||"",priority:editRec.priority||"🟡中",url:editRec.url||"",location:editRec.location||"",icon:editRec.icon||"",note:"おすすめから追加"},
