@@ -113,7 +113,12 @@ async function main() {
     }
     const ok = (c.accounts ?? 0) - (c.failures ?? 0);
     let line = `${n(ok)} / ${n(c.accounts)} アカウント成功、${n(c.total)}件`;
-    if (c.failures) line += `（失敗 ${c.failures}）`;
+    // 経路が2つある（お得情報 / 対応が要るもの）。合算だけだと、
+    // 片方が 0 になっても総数で隠れる。要対応が急に 0 なら判定が壊れた合図。
+    if (c.promo !== undefined || c.action !== undefined) {
+      line += `（お得 ${n(c.promo)} / 要対応 ${n(c.action)}）`;
+    } else if (c.failures) line += `（失敗 ${c.failures}）`;
+    if (c.failures && (c.promo !== undefined || c.action !== undefined)) line += `　失敗 ${c.failures}`;
     return line;
   }
 

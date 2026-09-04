@@ -52,6 +52,53 @@ const OUT_FILE = 'collected-gmail-imap.json';
 // OAuth 版と同じ検索条件。X-GM-RAW は Gmail の検索構文をそのまま受ける。
 const QUERY = `category:promotions newer_than:${MAX_AGE_DAYS}d -is:chat`;
 
+/* ── 「対応が要るメール」の経路 ──
+   ★なぜ別の経路が要るのか★
+   上の QUERY と keep() は「お得情報を拾う」ために作られている。
+   promotions に限定し、List-Unsubscribe を必須にし、「様へ」のように
+   個人宛ての匂いがするものを落とす。recs が誰でも読める場所に入る前提だった
+   からで、当時は正しかった。
+
+   2026-08-23 に Firebase を閉じたので、その前提は消えた。そして実際、
+   返事が要るメール（例: 面談場所のご相談）が三重に落とされていた——
+   promotions に入らない・「様へ」で DENY・販促語が無いので MUST 不成立。
+   これは調整ではなく、拾う対象が違うという話。
+
+   ★精度の作り方★
+   判定は **件名だけ** を見る。本文まで見るとメルマガの定型文が
+   ほぼ全部引っかかる。件名に「ご相談」「ご返信」と書いてあるものは、
+   実際に相手が返事を待っている確率が高い。
+   件数の上限も別に持つ。壊れたときの影響をこの経路の中に閉じ込める。 */
+const ACTION_QUERY = `newer_than:${MAX_AGE_DAYS}d -is:chat -in:spam -in:trash`;
+const ACTION_PER_ACCOUNT = Number(process.env.GMAIL_ACTION_PER_ACCOUNT || 20);
+
+// 件名にこれがあれば「相手が何かを待っている」と見なす。
+const ACTION_WORDS = [
+  'ご相談', '相談', 'ご連絡', 'ご確認', 'ご返信', 'ご返答', 'ご回答',
+  '日程', '面談', '面接', '打ち合わせ', '打合せ', '来社', '訪問',
+  'お願い', 'ご依頼', 'ご提出', '提出', '手続き', 'お手続き',
+  '期限', '締切', '締め切り', '要対応', '未提出', 'ご対応',
+  'リマインド', '再送', 'ご案内の件', 'について',
+];
+
+/* 件名に依頼の語があっても、実際には対応が要らないもの。
+   - 済んだことの通知（決済完了・発送）は読むだけ
+   - 認証コードの類は寿命が数分で、タスクにする意味がない
+   - 配信物そのもの（メルマガ）は「ご案内」を含みがち */
+const ACTION_DENY = [
+  /認証コード|ワンタイム|確認コード|パスワード(?:の)?(?:再設定|変更|リセット)|セキュリティ(?:通知|警告)/,
+  /決済完了|お支払い完了|入金確認|発送(?:のお知らせ|完了)|配送完了|お届け完了|領収書|ご利用明細/,
+  /メールマガジン|メルマガ|ニュースレター|配信停止/,
+  /自動返信|Automatic reply|Out of Office/i,
+];
+
+export function keepAction(subject) {
+  const t = String(subject || '');
+  if (!t) return false;
+  if (ACTION_DENY.some((re) => re.test(t))) return false;
+  return ACTION_WORDS.some((w) => t.includes(w));
+}
+
 /* mac/.env から "アドレス:アプリパスワード" の組を読む。
    アプリパスワードは英小文字16桁で、表示上4桁ごとに空白が入る。貼り付けたまま
    でも動くように空白を落とす。アドレスに : は入らないので最初の : で割る。 */
@@ -238,7 +285,9 @@ function groupFetch(lines) {
   for (const l of lines) {
     if (/^\* \d+ FETCH/i.test(l.text)) {
       if (cur) out.push(cur);
-      cur = { header: null, body: null };
+      // どちらの検索で引っかかったかを後で見分けるために UID を控える。
+      const uid = (l.text.match(/\bUID\s+(\d+)/i) || [])[1] || null;
+      cur = { uid, header: null, body: null };
     }
     if (!cur || !l.literal) continue;
     if (/HEADER\.FIELDS/i.test(l.text)) cur.header = l.literal;
@@ -276,18 +325,31 @@ async function collectAccount({ email, pass }) {
     const sel = await c.send(`SELECT ${quote(allBox)}`);
     if (!/^\S+ OK/i.test(sel.tagLine)) throw new Error(`メールボックスを開けません（${allBox}）`);
 
-    const search = await c.send(`UID SEARCH X-GM-RAW ${quote(QUERY)}`);
-    const hits = (search.lines.find((l) => /^\* SEARCH/i.test(l.text))?.text || '')
-      .replace(/^\* SEARCH\s*/i, '').trim().split(/\s+/).filter(Boolean);
-    // 新しいものから。UID は増加するので末尾が最新。
-    const uids = hits.slice(-PER_ACCOUNT).reverse();
-    if (!uids.length) return { email, scanned: 0, kept: 0, items: [] };
+    /* 2経路を順に引く。お得情報（promotions＋販促語）と、
+       対応が要るもの（件名に依頼の語）。同じメールが両方に出ることも
+       あるが、build-recs がタイトルで重複を除く。 */
+    async function search(q, cap) {
+      const res = await c.send(`UID SEARCH X-GM-RAW ${quote(q)}`);
+      const hits = (res.lines.find((l) => /^\* SEARCH/i.test(l.text))?.text || '')
+        .replace(/^\* SEARCH\s*/i, '').trim().split(/\s+/).filter(Boolean);
+      // 新しいものから。UID は増加するので末尾が最新。
+      return hits.slice(-cap).reverse();
+    }
+
+    const promoUids = await search(QUERY, PER_ACCOUNT);
+    const actionUids = await search(ACTION_QUERY, ACTION_PER_ACCOUNT);
+    // 同じ UID が両方に出たら1回だけ取る。
+    const actionSet = new Set(actionUids);
+    const uids = [...new Set([...promoUids, ...actionUids])];
+    if (!uids.length) return { email, scanned: 0, kept: 0, promo: 0, action: 0, items: [] };
 
     const fetched = await c.send(
       `UID FETCH ${uids.join(',')} (BODY.PEEK[HEADER.FIELDS (SUBJECT LIST-UNSUBSCRIBE MESSAGE-ID)] BODY.PEEK[1]<0.3000>)`,
     );
 
     const items = [];
+    let promo = 0;
+    let action = 0;
     for (const rec of groupFetch(fetched.lines)) {
       if (!rec.header) continue;
       const raw = rec.header;
@@ -299,20 +361,40 @@ async function collectAccount({ email, pass }) {
         messageId: headerOf(raw, 'Message-ID'),
       };
       if (!item.subject) continue;
-      // 判定は OAuth 版と共有する。片方だけ緩むのを防ぐため。
-      if (!keep(item)) continue;
-      items.push({
-        key: 'メール',
-        category: 'お金',
-        icon: '📧',
-        title: item.subject.slice(0, 90),
-        desc: item.snippet,
-        url: mailAppUrl(item.messageId),
-        via: 'gmail',
-      });
+
+      /* お得情報の判定は OAuth 版と共有する（片方だけ緩むのを防ぐため）。
+         そこを通らなかったものだけ、対応が要るかを見る。
+         販促の判定を先にするのは、両方に当てはまるメール——
+         「キャンペーンのご案内、ご確認ください」のようなもの——を
+         お金として扱いたいため。 */
+      if (keep(item)) {
+        items.push({
+          key: 'メール',
+          category: 'お金',
+          icon: '📧',
+          title: item.subject.slice(0, 90),
+          desc: item.snippet,
+          url: mailAppUrl(item.messageId),
+          via: 'gmail',
+        });
+        promo += 1;
+      } else if (rec.uid && actionSet.has(rec.uid) && keepAction(item.subject)) {
+        items.push({
+          key: 'メール',
+          // 販促ではなく、返事や手続きが要るもの。カテゴリを分けておくと
+          // 一覧で混ざらず、学習の重みも別々に効く。
+          category: '契約・手続き',
+          icon: '✉️',
+          title: item.subject.slice(0, 90),
+          desc: item.snippet,
+          url: mailAppUrl(item.messageId),
+          via: 'gmail',
+        });
+        action += 1;
+      }
     }
 
-    return { email, scanned: uids.length, kept: items.length, items };
+    return { email, scanned: uids.length, kept: items.length, promo, action, items };
   } finally {
     try { await c.send('LOGOUT'); } catch { /* 閉じるだけ */ }
     sock.destroy();
@@ -336,13 +418,17 @@ async function main() {
   const all = [];
   const seen = new Set();
   let failures = 0;
+  let promoTotal = 0;
+  let actionTotal = 0;
 
   for (const acc of list) {
     // ログに出すのはドメインだけ。どのアカウントが落ちたかの切り分けには足りる。
     const domain = acc.email.split('@')[1] || '不明';
     try {
       const r = await collectAccount(acc);
-      console.log(`  @${domain}: ${r.scanned}件を確認 → ${r.kept}件を採用`);
+      console.log(`  @${domain}: ${r.scanned}件を確認 → ${r.kept}件を採用（お得 ${r.promo} / 要対応 ${r.action}）`);
+      promoTotal += r.promo || 0;
+      actionTotal += r.action || 0;
       for (const it of r.items) {
         const k = it.title.toLowerCase().replace(/\s/g, '');
         if (seen.has(k)) continue;
@@ -355,7 +441,7 @@ async function main() {
     }
   }
 
-  console.log(`\n合計 ${all.length}件（重複除去後）`);
+  console.log(`\n合計 ${all.length}件（重複除去後） — お得 ${promoTotal} / 要対応 ${actionTotal}`);
 
   // 判定より先に書く。採れた分を捨てず、古いファイルを残さないため
   // （理由は collect-gmail.mjs の同じ箇所に書いた）。
@@ -369,7 +455,7 @@ async function main() {
     collectedAt: new Date().toISOString(),
     method: 'imap',
     query: QUERY,
-    counts: { total: all.length, accounts: list.length, failures },
+    counts: { total: all.length, accounts: list.length, failures, promo: promoTotal, action: actionTotal },
     items: all,
   }, null, 2));
   console.log(`📦 ${OUT_FILE} に保存`);

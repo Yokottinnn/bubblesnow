@@ -10,7 +10,7 @@
 //
 // 実行: node scripts/test-collect-gmail-imap.mjs
 
-import { decodeWords, snippetFrom, headerOf, accounts, scan, groupFetch } from './collect-gmail-imap.mjs';
+import { decodeWords, snippetFrom, headerOf, accounts, scan, groupFetch, keepAction } from './collect-gmail-imap.mjs';
 import { keep } from './collect-gmail.mjs';
 
 let pass = 0;
@@ -163,6 +163,35 @@ function ok(name, cond) { eq(name, Boolean(cond), true); }
     !keep({ subject: '認証コードのお知らせ', snippet: 'キャンペーン', bulk: true }));
   ok('販促語が無ければ落とす',
     !keep({ subject: '今週のニュースレター', snippet: '', bulk: true }));
+}
+
+/* ── keepAction（対応が要るメールの判定）──
+   実際に取りこぼした件名から作ったテスト。保険マンモスからの
+   「面談場所に関するご相談」が三重に落とされていた——promotions に
+   入らない・「様へ」で DENY・販促語が無いので MUST 不成立。
+   お得情報の経路とは別に、返事が要るものを拾う経路が要る。
+
+   判定は件名だけを見る。本文まで見るとメルマガの定型文がほぼ全部
+   引っかかるので、精度はここで決まる。 */
+{
+  // 拾うべきもの
+  ok('面談場所のご相談を拾う',
+    keepAction('■保険マンモスより横田様へ（お客様ＩＤ：1432541）※面談場所に関するご相談※'));
+  ok('提出期限を拾う', keepAction('【重要】ご提出書類の期限について'));
+  ok('日程調整を拾う', keepAction('日程調整のお願い'));
+  ok('返信依頼を拾う', keepAction('先日の件、ご返信いただけますでしょうか'));
+  ok('手続きを拾う', keepAction('お手続きが完了していません'));
+
+  // 落とすべきもの
+  ok('販促は拾わない（お得の経路が扱う）', !keepAction('春のポイント還元キャンペーン開催中！'));
+  ok('発送通知は拾わない', !keepAction('【楽天市場】商品を発送しました'));
+  ok('決済完了は拾わない', !keepAction('お支払い完了のお知らせ'));
+  ok('認証コードは拾わない', !keepAction('認証コード: 483920'));
+  ok('パスワード再設定は拾わない', !keepAction('パスワードの再設定について'));
+  ok('メルマガは拾わない', !keepAction('メールマガジン第120号 今週のご案内'));
+  ok('自動返信は拾わない', !keepAction('自動返信: お問い合わせありがとうございます'));
+  ok('空の件名は拾わない', !keepAction(''));
+  ok('依頼の語が無ければ拾わない', !keepAction('本日のニュースまとめ'));
 }
 
 console.log(`\n${pass}件 通過 / ${fails.length}件 失敗`);
