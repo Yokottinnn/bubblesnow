@@ -586,6 +586,23 @@ async function main() {
   const after = (await fbGet(`${BASE}/recommendations`).catch(() => null)) || [];
   const n = Array.isArray(after) ? after.filter(Boolean).length : 0;
   console.log(n === merged.length ? `✅ 反映を確認（${n}件）` : `⚠️ 反映後の件数が想定と違います（${n} vs ${merged.length}）`);
+
+  /* 心拍に出すための数字を残す。
+     「選別 13件」だけでは、その 13件が入る枠があったのかが分からない。
+     2026-08-31 には 60枠のうち 51枠が却下済みの rec で埋まっていて、
+     新しい rec が入るたびに古い枠が押し出されていた。その詰まりは
+     「選別できた件数」には一切現れず、画面が空になって初めて表に出た。
+     反映後の合計と、整理で外れた件数を残しておけば、次は数字で気づける。 */
+  await writeFile('recs-stats.json', JSON.stringify({
+    at: new Date().toISOString(),
+    counts: {
+      existing: existing.length,
+      added: withIds.length,
+      removed,
+      total: n,
+      limit: MAX_TOTAL,
+    },
+  }, null, 2));
   console.log('=== 完了・課金は発生していません（$0）===');
 }
 

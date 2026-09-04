@@ -95,6 +95,8 @@ async function main() {
   const gmailImap = await counts('collected-gmail-imap.json');
   const learn = await counts('learned-weights.json');
   const built = await length('recs-built-preview.json');
+  const stats = await counts('recs-stats.json');
+  const statsMeta = await meta('recs-stats.json');
 
   /* Gmail は2経路を併用する（OAuth / IMAP）。**経路ごとに出す。**
      合算して1行にすると、片方が死んでももう片方の件数で健全に見えてしまう。
@@ -162,6 +164,13 @@ ${learn ? `採用 ${n(learn.adopted)}件 / 却下 ${n(learn.dismissed)}件 か�
 ## 選別
 
 ${built === null ? '不明' : `${built}件を選定`}
+
+## おすすめの在庫
+
+${stats && !statsMeta.stale
+  ? `${n(stats.total)} / ${n(stats.limit)}件（既存 ${n(stats.existing)} + 新規 ${n(stats.added)}${stats.removed ? ` − 整理 ${stats.removed}` : ''}）`
+    + (stats.total >= stats.limit ? '　⚠️ 上限に達しています' : '')
+  : '不明'}
 
 ---
 
