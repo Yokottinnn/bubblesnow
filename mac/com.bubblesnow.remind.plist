@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.bubblesnow.remind</string>
+
+  <!-- 期限が近いタスクを Slack にリマインドする。朝8時と夕方18時の2回。
+       ラッパー経由なのは mac/.env を読み込ませるため。launchd はシェルの
+       環境を継承しないので、plist に秘密情報を書かずに済むこの形にしている
+       （plist は mac/ に置いてリポジトリに載るが .env は gitignore 済み）。
+
+       ★このジョブを GitHub Actions に移さないこと★
+       リポジトリは public で Actions のログも公開される。本文にはタスク名が
+       載るため、ログが非公開なローカルで動かすことが前提条件になっている。 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/ny/bubblesnow/mac/run-remind.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/ny/bubblesnow</string>
+
+  <!-- 朝は全区分、夕方は期限切れと本日のみ（SLOT はラッパーが時刻から決める） -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Hour</key><integer>8</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key><integer>18</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+  </array>
+
+  <key>StandardOutPath</key>
+  <string>/Users/ny/bubblesnow/mac/logs/remind.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/ny/bubblesnow/mac/logs/remind.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>/Users/ny</string>
+  </dict>
+</dict>
+</plist>

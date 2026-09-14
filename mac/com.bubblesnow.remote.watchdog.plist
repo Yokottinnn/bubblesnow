@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.bubblesnow.remote.watchdog</string>
+
+  <!-- Remote Control のゾンビ状態を見張る。
+       KeepAlive はプロセスが終了したときしか再起動しない。ところが Remote
+       Control は 403 などで接続が恒久的に閉じてもプロセスは生き続け、
+       Reconnecting を延々と繰り返す。この状態を launchd は検知できず、
+       一覧上は offline のまま戻らない（実際に PID 919 が生きているのに
+       BubblesNow (Mac) が offline になっていた）。
+       外から状態を見て叩き起こす役がどうしても要る。
+       ついでに肥大化するログの切り詰めも同じ周期で行う（実測 352MB）。 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/ny/bubblesnow/mac/remote-watchdog.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/ny/bubblesnow</string>
+
+  <!-- 5分おき。切断が5分続いたら再起動する設定（STALE_SEC=300）と揃えている -->
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/ny/bubblesnow/mac/logs/watchdog.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/ny/bubblesnow/mac/logs/watchdog.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>/Users/ny</string>
+    <!-- 切断がこの秒数続いたら強制再起動 -->
+    <key>STALE_SEC</key>
+    <string>300</string>
+    <!-- ログがこのサイズを超えたら末尾だけ残して切り詰める -->
+    <key>MAX_BYTES</key>
+    <string>20971520</string>
+    <key>KEEP_BYTES</key>
+    <string>2097152</string>
+  </dict>
+</dict>
+</plist>

@@ -353,3 +353,72 @@ ps -eo pid,ppid,etime,command | grep 'remote-control' | grep -v grep
 未読み込みだった。表示だけでは足りない。**`ps` の PPID が 1 であること**を
 確かめること。launchd が親でなければ、それは手動起動のプロセスで、
 再起動すれば消える。
+
+---
+
+## 期限リマインド（Slack）
+
+未完了タスクのうち期限が近いものを Slack に流す。朝8時と夕方18時の2回。
+
+| 役割 | 実体 |
+|---|---|
+| 判定・文面生成 | `scripts/remind-deadlines.mjs` |
+| テスト | `scripts/test-remind-deadlines.mjs`（通信なし・62件） |
+| 起動ラッパー | `mac/run-remind.sh`（`.env` 読み込みと枠の判定） |
+| 常駐定義 | `mac/com.bubblesnow.remind.plist` |
+| ログ | `mac/logs/remind.log` |
+
+### なぜ GitHub Actions ではなくローカルなのか
+
+**このリポジトリは public で Actions のログも公開される。**
+リマインド本文にはタスク名が載る。タスクには確定申告・通院・解約手続きなどが
+含まれるため、公開ログに出る場所で動かしてはいけない。
+ログが非公開なローカルで動かすことが前提条件であり、**Actions へ移植しないこと。**
+
+スクリプト側も、標準出力に出すのは件数と区分だけに制限してある。
+本文を出すのは `DRY_RUN=true` のときだけ。
+
+### 通知する区分
+
+朝は5区分すべて、夕方は「期限切れ」「本日」だけに絞る。
+朝に全部見せた直後に同じ量を流すと通知疲れを起こして読まれなくなる。
+
+| 区分 | 残り日数 | 朝 | 夕方 |
+|---|---|:-:|:-:|
+| 🚨 期限切れ | 1日以上超過 | ○ | ○ |
+| ⏰ 本日が期限 | 0日 | ○ | ○ |
+| ⚠️ 明日が期限 | 1日 | ○ | — |
+| 📌 3日以内 | 2〜3日 | ○ | — |
+| 🗓️ 7日以内 | 4〜7日 | ○ | — |
+
+8日以上先は通知しない。毎日流すと慣れて無視されるため意図的に外している。
+
+### 必要な設定
+
+`mac/.env`（gitignore 済み）に以下を置く。`SLACK_WEBHOOK_URL` が未設定の間は
+ラッパーが何もせず正常終了するので、常駐を入れたまま放置してよい。
+
+```
+FIREBASE_URL=...
+FIREBASE_SECRET=...
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+```
+
+### 動作確認
+
+```bash
+node scripts/test-remind-deadlines.mjs            # 通信なし
+set -a; . ./mac/.env; set +a
+DRY_RUN=true SLOT=morning node scripts/remind-deadlines.mjs   # 実データ・送信なし
+DRY_RUN=true SLOT=evening node scripts/remind-deadlines.mjs
+```
+
+### 実装上の注意
+
+- **日付は必ず JST で判定する。** 実行環境の TZ に任せると UTC 15時以降が
+  翌日扱いになり、期限当日の通知が1日ずれる。`todayJst()` を通すこと。
+- **二重送信は「日付＋枠」の鍵で防ぐ。** launchd はスリープ復帰時に取りこぼした
+  起動をまとめて実行することがある。状態は `mac/.remind-state.json`。
+- **シェルで `$VAR` の直後に全角文字を置かない。** `（slot=$SLOT）` は
+  `SLOT）` という変数名として読まれ、`set -u` 下で unbound になる。
+  実際にこれを踏んだ。`${SLOT}` と波括弧で括ること。

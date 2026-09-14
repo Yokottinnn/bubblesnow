@@ -1,4 +1,6 @@
-mac/.env
+# .bak などの派生も必ず除外する。リポジトリは public なので、
+# mac/.env だけを書いていると mac/.env.bak が git add -A で載ってしまう。
+mac/.env*
 mac/logs/
 node_modules/
 collected-x.json
@@ -10,3 +12,4 @@ learned-weights.json
 collected-gmail.json
 collected-gmail-imap.json
 recs-stats.json
+mac/.remind-state.json
