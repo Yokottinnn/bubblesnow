@@ -358,7 +358,7 @@ ps -eo pid,ppid,etime,command | grep 'remote-control' | grep -v grep
 
 ## 期限リマインド（Slack）
 
-未完了タスクのうち期限が近いものを Slack に流す。朝8時と夕方18時の2回。
+未完了タスクのうち期限が近いものを Slack に流す。朝8時と夜22時の2回。
 
 | 役割 | 実体 |
 |---|---|
@@ -380,10 +380,10 @@ ps -eo pid,ppid,etime,command | grep 'remote-control' | grep -v grep
 
 ### 通知する区分
 
-朝は5区分すべて、夕方は3日以内までに絞る。
-7日先は朝だけでよく、夕方も同じ量を流すと通知疲れを起こす。
+朝は5区分すべて、夜は3日以内までに絞る。
+7日先は朝だけでよく、夜も同じ量を流すと通知疲れを起こす。
 
-| 区分 | 残り日数 | 朝 | 夕方 | メンション |
+| 区分 | 残り日数 | 朝 | 夜 | メンション |
 |---|---|:-:|:-:|:-:|
 | 🚨 期限切れ | 1日以上超過 | ○ | ○ | ○ |
 | ⏰ 本日が期限 | 0日 | ○ | ○ | ○ |
@@ -400,8 +400,8 @@ ps -eo pid,ppid,etime,command | grep 'remote-control' | grep -v grep
 毎回鳴らすと通知が日常化して効かなくなるため、手を打たないと間に合わない
 範囲に絞っている。
 
-夕方の対象を3日以内まで広げているのは、メンション条件と揃えるため。
-夕方が期限切れと本日しか出さないと、3日以内でメンションする相手が
+夜の対象を3日以内まで広げているのは、メンション条件と揃えるため。
+夜が期限切れと本日しか出さないと、3日以内でメンションする相手が
 本文に居ない状態になる。
 
 送信先は `.env` の `SLACK_MENTION`。**値は必ずクォートすること。**
@@ -430,7 +430,7 @@ SLACK_MENTION='<@U0A5V22PVTQ>'
 node scripts/test-remind-deadlines.mjs            # 通信なし
 set -a; . ./mac/.env; set +a
 DRY_RUN=true SLOT=morning node scripts/remind-deadlines.mjs   # 実データ・送信なし
-DRY_RUN=true SLOT=evening node scripts/remind-deadlines.mjs
+DRY_RUN=true SLOT=evening node scripts/remind-deadlines.mjs   # 夜の枠
 ```
 
 ### 実装上の注意

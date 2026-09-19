@@ -106,7 +106,7 @@ ok('完了済みは含まれない', !msg.includes('完了済み'));
 eq('末尾に余分な空行を残さない', msg.endsWith('\n'), false);
 
 const emsg = buildMessage(evening, { slot: 'evening', today });
-ok('夕方の見出し', emsg.startsWith('🌆'));
+ok('夜の見出し', emsg.startsWith('🌙'));
 ok('夕方も3日以内までは含む', emsg.includes('3日以内'));
 ok('夕方は7日以内を含まない', !emsg.includes('7日以内'));
 
@@ -133,8 +133,8 @@ ok('3日以内にはメンションが付く',
   buildMessage(soonOnly, { slot: 'morning', today, mention: MEN }).startsWith(`${MEN} 🌅`));
 ok('mention 未指定なら付かない',
   buildMessage(overdueOnly, { slot: 'morning', today }).startsWith('🌅'));
-ok('夕方もメンションが付く',
-  buildMessage(overdueOnly, { slot: 'evening', today, mention: MEN }).startsWith(`${MEN} 🌆`));
+ok('夜もメンションが付く',
+  buildMessage(overdueOnly, { slot: 'evening', today, mention: MEN }).startsWith(`${MEN} 🌙`));
 eq('メンション対象の区分は定義済みのものだけ',
   MENTION_KEYS.filter((k) => !THRESHOLDS.map((b) => b.key).includes(k)), []);
 

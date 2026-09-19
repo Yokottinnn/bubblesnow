@@ -121,7 +121,7 @@ export function buildMessage(tasks, { slot = 'morning', today, mention = '' } = 
   if (!tasks.length) return null;
 
   const base = slot === 'evening'
-    ? `🌆 今日中のタスク確認（${today}）`
+    ? `🌙 期限が近いタスク（${today}）`
     : `🌅 今日の期限リマインド（${today}）`;
   // メンションは先頭に置く。本文の途中だと通知のプレビューで見えない。
   const heading = mention && needsMention(tasks) ? `${mention} ${base}` : base;

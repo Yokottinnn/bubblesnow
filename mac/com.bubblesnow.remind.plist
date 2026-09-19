@@ -22,7 +22,8 @@
   <key>WorkingDirectory</key>
   <string>/Users/ny/bubblesnow</string>
 
-  <!-- 朝は全区分、夕方は期限切れと本日のみ（SLOT はラッパーが時刻から決める） -->
+  <!-- 朝8時と夜22時。朝は7日先まで、夜は3日以内まで。
+       SLOT はラッパーが時刻から決める（12時より前なら morning） -->
   <key>StartCalendarInterval</key>
   <array>
     <dict>
@@ -30,7 +31,7 @@
       <key>Minute</key><integer>0</integer>
     </dict>
     <dict>
-      <key>Hour</key><integer>18</integer>
+      <key>Hour</key><integer>22</integer>
       <key>Minute</key><integer>0</integer>
     </dict>
   </array>
