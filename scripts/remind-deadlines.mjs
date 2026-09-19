@@ -82,12 +82,22 @@ export function humanDays(days) {
   return `あと${days}日`;
 }
 
+/**
+ * Slack でリンクとして機能するURLかどうか。
+ * タスクの url には Gmail のメッセージID（message:<...@...>）のような
+ * http 以外のスキームが入ることがあり、そのまま <url|リンク> にすると
+ * クリックできない壊れたリンクになる。実データで確認済み。
+ */
+export function isLinkable(url) {
+  return /^https?:\/\/\S+$/i.test(String(url || '').trim());
+}
+
 /** 1行分の表示。タスク名は改行可なので1行に潰す。 */
 export function formatTask(t) {
   const name = String(t.name).replace(/\s*\n+\s*/g, ' ').trim();
   const icon = t.icon ? `${t.icon} ` : '';
   const loc = t.location ? `　📍${t.location}` : '';
-  const url = t.url ? `　<${t.url}|リンク>` : '';
+  const url = isLinkable(t.url) ? `　<${t.url}|リンク>` : '';
   return `• ${icon}*${name}*　_${t.deadline}（${humanDays(t.days)}）_${loc}${url}`;
 }
 

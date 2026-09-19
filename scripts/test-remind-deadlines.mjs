@@ -9,7 +9,7 @@
 
 import {
   daysUntil, todayJst, selectTasks, humanDays, formatTask, buildMessage, stateKey,
-  THRESHOLDS, SLOT_KEYS,
+  isLinkable, THRESHOLDS, SLOT_KEYS,
 } from './remind-deadlines.mjs';
 
 let pass = 0;
@@ -78,6 +78,19 @@ eq('改行入りのタスク名は1行に潰す',
 eq('アイコン・場所・URLが付く',
   formatTask({ name: 'A', deadline: '2026-09-15', days: 0, icon: '🏥', location: '銀座', url: 'https://x.test' }),
   '• 🏥 *A*　_2026-09-15（本日）_　📍銀座　<https://x.test|リンク>');
+
+// 実データで Gmail のメッセージID形式が入っており、Slack で壊れたリンクになった
+eq('http/https だけリンクにする', isLinkable('https://x.test'), true);
+eq('http も可', isLinkable('http://x.test'), true);
+eq('message: は弾く', isLinkable('message:<abc@def.jp>'), false);
+eq('mailto: は弾く', isLinkable('mailto:a@b.jp'), false);
+eq('スキーム無しは弾く', isLinkable('example.com'), false);
+eq('空は弾く', isLinkable(''), false);
+eq('undefined は弾く', isLinkable(undefined), false);
+eq('javascript: は弾く', isLinkable('javascript:alert(1)'), false);
+eq('リンクにできないURLは出力ごと省く',
+  formatTask({ name: 'A', deadline: '2026-09-15', days: 0, url: 'message:<abc@def.jp>' }),
+  '• *A*　_2026-09-15（本日）_');
 
 console.log('\n── ④ 本文の組み立て ──');
 eq('対象ゼロなら送らない（nullを返す）', buildMessage([], { slot: 'morning', today }), null);
