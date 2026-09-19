@@ -6,7 +6,7 @@
 //
 // 実行: node scripts/test-build-recs.mjs
 
-import { score, extractDeadline, toRec, isDismissed, assignIds, prune, setLearned, cleanText, truncateAtBoundary, decodeEntities, toTaskTitle } from './build-recs.mjs';
+import { score, isDateOnlyTitle, stripLeadingDatePhrase, refineCategory, extractDeadline, toRec, isDismissed, assignIds, prune, setLearned, cleanText, truncateAtBoundary, decodeEntities, toTaskTitle } from './build-recs.mjs';
 import { learnWeights, ngrams } from './learn-preferences.mjs';
 
 let pass = 0;
@@ -284,6 +284,76 @@ eq('保存するタイトルなら却下に当たる',
 eq('既存recsとの重複も保存タイトルでないと一致しない',
   [storedTitle].map((t) => t.toLowerCase().replace(/[\s　]/g, '')).includes(
     longItem.title.toLowerCase().replace(/[\s　]/g, '')), false);
+
+console.log('── 品質フィルタ（実データで混入したもの）──');
+// X の検索をいいね数で絞ると、反応の大きいアダルト系セールが上位に来る
+eq('FANZAは失格', score({ title: 'FANZAで秋の感謝祭セールが開催中' }).disqualified, true);
+eq('美少女フィギュアの水着表現は失格',
+  score({ title: 'Athena:X「水着のお姉さん 真夏のひととき」美少女フィギュア' }).disqualified, true);
+eq('18禁は失格', score({ title: '18禁ゲームのセール開催' }).disqualified, true);
+eq('通常のセールは通す', score({ title: 'くら寿司「北海フェア」開催中' }).disqualified, undefined);
+
+// 投稿の1行目が日付だけのことがあり、何の告知か分からないタスクになる
+eq('年月日だけは中身なし', isDateOnlyTitle('2026年11月15日(日)'), true);
+eq('日付＋発売だけは中身なし', isDateOnlyTitle('9/21(月・祝)発売'), true);
+eq('期間だけは中身なし', isDateOnlyTitle('2026年9月21日（月）から9月23日（水）までの3日間限定、'), true);
+eq('時刻だけは中身なし', isDateOnlyTitle('10/1 19:00〜'), true);
+eq('日付があっても主語があれば残す', isDateOnlyTitle('9/21 くら寿司で北海フェア開催'), false);
+eq('日付が無い普通の見出しは残す', isDateOnlyTitle('ジェットスタータイムセール'), false);
+eq('空は中身なし扱い', isDateOnlyTitle(''), true);
+eq('日付だけの見出しは失格になる', score({ title: '2026年11月15日(日)' }).disqualified, true);
+
+
+
+console.log('── 日付の前置きを外す（実データで見出しが日付だけになった）──');
+eq('日付の前置きを落として主語から始める',
+  stripLeadingDatePhrase('2026年9月21日（月）から9月23日（水）までの3日間限定、ローソンが「ジャンボアメリカンドッグ100円セール」を開催します。'),
+  'ローソンが「ジャンボアメリカンドッグ100円セール」を開催します。');
+eq('短い日付の前置きも落とす',
+  stripLeadingDatePhrase('9/21から、くら寿司で北海フェアが始まります'),
+  'くら寿司で北海フェアが始まります');
+eq('日付でない前置きは残す',
+  stripLeadingDatePhrase('速報です、ジェットスターがセールを開始'),
+  '速報です、ジェットスターがセールを開始');
+eq('数字が無い前置きは残す',
+  stripLeadingDatePhrase('お知らせ、セール開催'),
+  'お知らせ、セール開催');
+eq('区切りが無ければそのまま',
+  stripLeadingDatePhrase('くら寿司「北海フェア」開催中'),
+  'くら寿司「北海フェア」開催中');
+eq('外した残りが短すぎるなら元のまま',
+  stripLeadingDatePhrase('2026年9月21日から、開始'),
+  '2026年9月21日から、開始');
+eq('空でも落ちない', stripLeadingDatePhrase(''), '');
+
+console.log('── カテゴリの補正（検索語とズレたものを寄せる）──');
+// セール系の検索語で拾われた飲食の告知がショッピングに入った（実データ）
+eq('コンビニの食べ物はグルメへ',
+  refineCategory({ category: 'ショッピング', title: 'ローソンが「ジャンボアメリカンドッグ100円セール」を開催します。' }),
+  'グルメ');
+eq('寿司はグルメへ',
+  refineCategory({ category: 'ショッピング', title: 'くら寿司 北海フェア' }), 'グルメ');
+eq('航空券はおでかけへ',
+  refineCategory({ category: 'ショッピング', title: 'JALパック タイムセール 航空券' }), 'おでかけ');
+eq('展覧会はおでかけへ',
+  refineCategory({ category: 'その他', title: 'スター・ウォーズ展覧会が開催' }), 'おでかけ');
+eq('既に正しいものは触らない',
+  refineCategory({ category: 'グルメ', title: 'くら寿司 北海フェア' }), 'グルメ');
+eq('手掛かりが無ければ元のまま',
+  refineCategory({ category: 'ショッピング', title: 'Kindleセール開催中' }), 'ショッピング');
+eq('未知のカテゴリはその他になる',
+  refineCategory({ category: '謎', title: '何かの告知' }), 'その他');
+eq('descの語も見る',
+  refineCategory({ category: 'ショッピング', title: '限定企画', desc: '焼肉食べ放題が半額' }), 'グルメ');
+// 現在のカテゴリを裏づける語があれば、他カテゴリの語が混ざっても動かさない
+eq('カレーフェアはdescにライブがあってもグルメのまま',
+  refineCategory({ category: 'グルメ', title: 'SKYGARDEN カレーフェア開催中', desc: '屋上のライブ会場で実施' }),
+  'グルメ');
+eq('Kindleのセールはショッピングのまま',
+  refineCategory({ category: 'ショッピング', title: '『シャインポスト』コミックスKindle版が50％ポイント還元', desc: 'アイドルのライブ描写が人気' }),
+  'ショッピング');
+eq('複数カテゴリに該当するなら判断せず元のまま',
+  refineCategory({ category: 'お金', title: '寿司も航空券もお得' }), 'お金');
 
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

@@ -245,7 +245,32 @@ const SIGNALS = [
 const DISQUALIFY = [
   { re: /(終了しました|終了いたしました|受付終了|募集終了|締め切りました|中止|延期)/, why: '既に終わっている' },
   { re: /(詐欺|注意喚起|被害|流出|不正アクセス|逮捕|炎上)/, why: 'ネガティブな話題' },
+  // X の検索でいいね数だけを条件にすると、反応の大きいアダルト系の
+  // セール告知が上位に入ってくる（実際に FANZA と美少女フィギュアが
+  // 候補に載った）。タスク候補として出す性質のものではないので落とす。
+  { re: /(FANZA|DMM\.?R18|アダルト|成人向け|18禁|R-?18|エロ|巨乳|水着のお姉さん|同人誌)/i, why: 'アダルト系' },
 ];
+
+/**
+ * 日付や時刻しか書かれていない見出しを弾く。
+ *
+ * X の投稿は1行目が「2026年11月15日(日)」「9/21(月・祝)発売」のように
+ * 日付だけのことがあり、そのまま見出しにすると何の告知か分からない
+ * タスクになる（実際に3件混ざった）。日付・記号・ごく短い定型語を
+ * 取り除いて、実質的な中身が残らないものを落とす。
+ */
+export function isDateOnlyTitle(title) {
+  const rest = String(title || '')
+    // 日付・時刻・曜日
+    .replace(/\d{1,4}\s*[年\/月.\-]\s*\d{1,2}\s*[月\/日.\-]?\s*\d{0,2}\s*日?/g, '')
+    .replace(/\(\s*[月火水木金土日祝・]+\s*\)|（\s*[月火水木金土日祝・]+\s*）/g, '')
+    .replace(/\d{1,2}\s*[:：]\s*\d{2}/g, '')
+    .replace(/\d+/g, '')
+    // 日付に付きがちな定型語。これだけ残っても中身とは言えない
+    .replace(/(発売|開催|開始|公開|予定|より|から|まで|限定|日間|時|分|〜|～)/g, '')
+    .replace(/[\p{P}\p{S}\s　]/gu, '');
+  return rest.length < 4;
+}
 
 // 逆に、おすすめとして出しても行動につながらないもの。
 const PENALTIES = [
@@ -261,6 +286,9 @@ export function score(item) {
   // 失格は最初に見る。以降の加点も学習分も見ない。
   for (const d of DISQUALIFY) {
     if (d.re.test(text)) return { total: -100, reasons: [`失格: ${d.why}`], disqualified: true };
+  }
+  if (isDateOnlyTitle(item.title)) {
+    return { total: -100, reasons: ['失格: 見出しが日付だけで中身が無い'], disqualified: true };
   }
 
   for (const s of SIGNALS) {
@@ -326,8 +354,66 @@ export function extractDeadline(text) {
   return Number.isNaN(Date.parse(iso)) ? '' : iso;
 }
 
+/**
+ * 見出し冒頭の日付の前置きを外す。
+ *
+ * 「2026年9月21日（月）から9月23日（水）までの3日間限定、ローソンが…」のように
+ * 日付から始まる投稿があり、そのまま切り詰めると読点で切れて日付だけが残り、
+ * 何の告知か分からない見出しになる（実データで発生）。
+ * 期限は deadline に別途入るので、見出しは主語から始めてよい。
+ *
+ * 外した結果が短すぎるときは、元の見出しを返す（消しすぎない）。
+ */
+export function stripLeadingDatePhrase(title) {
+  const s = String(title || '');
+  // 行頭から最初の区切り（、。：）までが日付の前置きになっている場合だけ落とす
+  const m = s.match(/^[^、。：:]{0,40}?[、。：:]\s*/);
+  if (!m) return s;
+  const head = m[0];
+  if (!/\d/.test(head)) return s;           // 数字が無いなら日付ではない
+  if (!isDateOnlyTitle(head)) return s;     // 日付以外の中身があるなら残す
+  const rest = s.slice(head.length).trim();
+  return rest.length >= 10 ? rest : s;
+}
+
+/**
+ * 本文の語からカテゴリを補正する。
+ *
+ * 収集側はトピック（検索語のまとまり）ごとにカテゴリを固定して付けるため、
+ * 検索語と内容がずれると誤分類になる。実際に「ローソンのアメリカンドッグ
+ * 100円セール」が、セール系の検索語で拾われたせいでショッピングに入った。
+ * 食べ物・飲食店の語が明確に出ているものはグルメへ寄せる。
+ *
+ * 確信が持てる語だけを見る。曖昧なものは収集側の判断を尊重して触らない。
+ */
+const CATEGORY_HINTS = [
+  {
+    category: 'グルメ',
+    re: /(寿司|ラーメン|カレー|焼肉|食べ放題|飲み放題|居酒屋|カフェ|スイーツ|パフェ|ドーナツ|ハンバーガー|牛丼|定食|弁当|グルメ|フェア.*(開催|実施)?.*(店|フード)|ローソン|セブン-?イレブン|ファミリーマート|マクドナルド|スタバ|スターバックス|ドトール|くら寿司|スシロー)/i,
+  },
+  {
+    category: 'おでかけ',
+    re: /(航空券|ホテル|旅行|温泉|宿泊|ツアー|新幹線|フライト|就航|展覧会|美術館|水族館|動物園|フェス|ライブ|コンサート|映画|上映|劇場)/,
+  },
+  {
+    category: 'ショッピング',
+    re: /(Kindle|コミックス|単行本|書籍|電子書籍|フィギュア|家電|コスメ|アパレル|通販|Amazon|楽天市場|ZOZO)/i,
+  },
+];
+
+export function refineCategory(item) {
+  const current = CATEGORIES.includes(item.category) ? item.category : 'その他';
+  const text = `${item.title || ''} ${item.desc || ''}`;
+  const matched = CATEGORY_HINTS.filter((h) => h.re.test(text)).map((h) => h.category);
+  // 今のカテゴリを裏づける語があるなら動かさない。
+  // （カレーフェアが「グルメ」なのに、desc の別の語でおでかけへ飛ぶのを防ぐ）
+  if (matched.includes(current)) return current;
+  // 寄せ先が1つに定まるときだけ動かす。複数該当は判断がつかないので触らない。
+  return matched.length === 1 ? matched[0] : current;
+}
+
 export function toRec(item) {
-  const rawTitle = decodeEntities(strip(item.title));
+  const rawTitle = stripLeadingDatePhrase(decodeEntities(strip(item.title)));
   const title = toTaskTitle(rawTitle, item.desc).slice(0, 60);
   const deadline = extractDeadline(`${item.title} ${item.desc || ''}`);
   // 期限が近いものだけ上げる。全部を🔴にすると優先度が意味を失う。
@@ -342,7 +428,7 @@ export function toRec(item) {
   return {
     title,
     desc: cleanedDesc.length >= 4 ? cleanedDesc : title,
-    category: CATEGORIES.includes(item.category) ? item.category : 'その他',
+    category: refineCategory(item),
     source: item.via === 'gmail' ? 'gmail' : (item.via === 'search' || item.via === 'profile' ? 'x' : 'news'),
     icon: item.icon || '📌',
     priority: PRIORITIES.includes(priority) ? priority : '🟡中',
@@ -531,7 +617,7 @@ async function main() {
   const picked = [];
   for (const s of scored) {
     if (picked.length >= MAX_RECS) break;
-    const cat = s.item.category || 'その他';
+    const cat = refineCategory(s.item);
     const n = perCategory.get(cat) || 0;
     if (n >= MAX_PER_CATEGORY) continue;
     perCategory.set(cat, n + 1);

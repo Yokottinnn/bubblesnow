@@ -35,32 +35,101 @@ const HAS_COOKIE = Boolean(AUTH_TOKEN && CT0);
 
 const MAX_AGE_DAYS = Number(process.env.MAX_AGE_DAYS || 14);
 
+// 「ちゃんと話題になっているもの」だけを拾うための既定のいいね下限。
+// 以前は下限が無く、収集100件の中央値が3いいね・28件が0いいねだった。
+// 反応の無い告知が候補に混ざると、選ぶ側の負担だけが増える。
+const DEFAULT_MIN_FAVES = Number(process.env.MIN_FAVES || 30);
+
+// 検索演算子が無視された場合の保険。トピックごとの下限より緩くしておき、
+// 「明らかに話題になっていないもの」だけを落とす。
+const MIN_FAVES_FLOOR = Number(process.env.MIN_FAVES_FLOOR || 10);
+
+/**
+ * 検索語に X の検索演算子を足す。
+ *   min_faves … 話題になっているものだけに絞る。収集時点で切るのが一番効く
+ *   lang:ja   … 日本語の告知だけ
+ *   -filter:retweets … 同じ告知がRTで重複するのを防ぐ
+ * 旧コードの `-is:retweet` は API v2 の書き方で、web 検索では効かない。
+ */
+const q = (text, minFaves = DEFAULT_MIN_FAVES) =>
+  `${text} min_faves:${minFaves} lang:ja -filter:retweets`;
+
 // 検索語と、拾いたいアカウント。アカウントは「告知が流れてくる場所」を選ぶ。
+//
+// カテゴリは index.html の9カテゴリに合わせる。
+// （契約・手続き / お金 / ヘルスケア / グルメ / ショッピング / おでかけ /
+//   キャリア・学び / ヒト / その他）
+// エンタメ専用のカテゴリは無いので、映画・ライブ・展示は「おでかけ」に寄せる。
+//
+// ★お得情報は「お金」に集めず、対象カテゴリ側に置く★
+// 飲食の半額はグルメ、旅行セールはおでかけ、物販セールはショッピング。
+// 全部お金に入れると、その日の関心（何を食べる・どこへ行く）から探せなくなる。
 const TOPICS = [
+  // ── グルメ ──────────────────────────────────────────
+  {
+    key: 'グルメ', category: 'グルメ', icon: '🍽️',
+    queries: [q('新店 オープン 話題'), q('期間限定 メニュー 登場'), q('food フェア 開催')],
+    accounts: [],
+    must: ['オープン', '開店', '限定', 'メニュー', '新作', 'フェア', '発売'],
+  },
+  {
+    key: 'グルメお得', category: 'グルメ', icon: '🍜',
+    // 半額・無料は反応が伸びやすいので下限を上げても取りこぼさない
+    queries: [q('半額 クーポン 飲食', 50), q('食べ放題 キャンペーン', 30), q('無料 配布 ドリンク', 50)],
+    accounts: [],
+    must: ['半額', 'クーポン', '無料', '割引', '食べ放題', 'キャンペーン'],
+  },
+
+  // ── おでかけ（旅行・エンタメ・サウナ）────────────────
+  {
+    key: '旅行', category: 'おでかけ', icon: '✈️',
+    queries: [q('航空券 セール 期間限定'), q('ホテル 割引 キャンペーン'), q('新幹線 旅行 お得 きっぷ')],
+    accounts: [],
+    must: ['セール', '割引', 'キャンペーン', '予約', '就航', 'きっぷ', 'プラン'],
+  },
+  {
+    key: 'エンタメ', category: 'おでかけ', icon: '🎬',
+    // 映画・ライブは母数が大きく反応も伸びるため下限を高めにして雑音を落とす
+    queries: [q('映画 公開 話題', 100), q('ライブ チケット 先行 発売', 50), q('展覧会 開催 東京', 50)],
+    accounts: [],
+    must: ['公開', '上映', 'ライブ', 'チケット', '展覧会', '開催', '発売', '開幕'],
+  },
+  {
+    key: 'サウナ', category: 'おでかけ', icon: '♨️',
+    queries: [q('サウナ 新店 オープン', 20), q('サウナ オープン 東京', 20)],
+    accounts: ['saunaikitai'],
+    must: ['サウナ', 'ととのい', '温浴', 'スパ'],
+  },
+
+  // ── ショッピング ────────────────────────────────────
+  {
+    key: 'ショッピング', category: 'ショッピング', icon: '🛍️',
+    queries: [q('セール 開催 お得', 50), q('ポイント還元 セール', 30), q('発売 予約開始 限定', 50)],
+    accounts: [],
+    must: ['セール', '発売', '予約', '限定', 'ポイント', '還元', '割引'],
+  },
+
+  // ── お金（カテゴリを跨ぐ、金融そのものの話）──────────
   {
     key: 'ポイ活', category: 'お金', icon: '💰',
-    queries: ['ポイ活 キャンペーン 還元 -is:retweet', 'キャッシュバック キャンペーン 開始'],
     // payannounce・rakutenpay は 2026-08-16 時点でアカウント消滅（404）のため削除
+    queries: [q('ポイ活 キャンペーン 還元', 20), q('キャッシュバック キャンペーン 開始', 20)],
     accounts: [],
     must: ['キャンペーン', '還元', 'ポイント', 'キャッシュバック', '増量'],
   },
   {
     key: 'クリプト', category: 'お金', icon: '🪙',
-    queries: ['エアドロップ 配布 キャンペーン', '暗号資産 取引所 キャンペーン'],
+    queries: [q('エアドロップ 配布 キャンペーン', 20), q('暗号資産 取引所 キャンペーン', 20)],
     accounts: ['bitbank_inc', 'coincheckjp'],
     must: ['キャンペーン', 'エアドロップ', '配布', '付与', '上場'],
   },
-  {
-    key: 'サウナ', category: 'おでかけ', icon: '♨️',
-    queries: ['サウナ 新店 オープン', 'サウナ オープン 東京'],
-    accounts: ['saunaikitai'],
-    must: ['サウナ', 'ととのい', '温浴', 'スパ'],
-  },
+
+  // ── キャリア・学び ──────────────────────────────────
   {
     key: 'テック', category: 'キャリア・学び', icon: '💻',
-    queries: ['カンファレンス 開催 エンジニア', 'ハッカソン 募集'],
     // connpass は 2026-08-16 時点でハンドルが別人（無関係な鍵垢）に
     // 乗っ取られているため削除
+    queries: [q('カンファレンス 開催 エンジニア', 20), q('ハッカソン 募集', 20)],
     accounts: [],
     must: ['カンファレンス', '勉強会', 'ハッカソン', 'イベント', '登壇', '募集'],
   },
@@ -268,6 +337,7 @@ async function main() {
   for (const topic of TOPICS) {
     let viaSearch = 0;
     let viaProfile = 0;
+    let belowFaves = 0;
     const failures = [];
 
     if (context) {
@@ -276,6 +346,9 @@ async function main() {
         if (!r.ok) { failures.push(`検索 status ${r.status}`); continue; }
         for (const it of r.items) {
           if (!withinAge(it.createdAt)) continue;
+          // min_faves は検索側で効くはずだが、演算子が無視された場合に
+          // 反応ゼロの投稿がそのまま入るので、手元でも同じ線で切る。
+          if (Number(it.likes || 0) < MIN_FAVES_FLOOR) { belowFaves += 1; continue; }
           const title = toTitle(it.text);
           const key = norm(title);
           if (!key || seen.has(key)) continue;
@@ -301,14 +374,16 @@ async function main() {
       }
     }
 
-    report.push({ key: topic.key, viaSearch, viaProfile, failures });
+    report.push({
+      key: topic.key, viaSearch, viaProfile, belowFaves, failures,
+    });
   }
 
   if (browser) await browser.close();
 
   console.log('── 方式別の取得件数 ──');
   for (const r of report) {
-    console.log(`  ${r.key.padEnd(6, '　')} 検索 ${String(r.viaSearch).padStart(3)}件 / プロフィール ${String(r.viaProfile).padStart(3)}件`);
+    console.log(`  ${r.key.padEnd(6, '　')} 検索 ${String(r.viaSearch).padStart(3)}件 / プロフィール ${String(r.viaProfile).padStart(3)}件 / 反応不足で除外 ${String(r.belowFaves ?? 0).padStart(3)}件`);
     for (const f of r.failures) console.log(`      ⚠️ ${f}`);
   }
 
