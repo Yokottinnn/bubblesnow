@@ -393,6 +393,20 @@ ps -eo pid,ppid,etime,command | grep 'remote-control' | grep -v grep
 
 8日以上先は通知しない。毎日流すと慣れて無視されるため意図的に外している。
 
+### メンション
+
+**期限切れか本日期限が1件でもあるときだけ**先頭にメンションを付ける
+（`MENTION_KEYS`）。3日以内・7日以内だけのときは付けない。
+毎回鳴らすと通知が日常化して効かなくなるため、鳴らす条件を絞っている。
+
+送信先は `.env` の `SLACK_MENTION`。**値は必ずクォートすること。**
+`run-remind.sh` が `.env` を source するので、`<@U...>` を裸で書くと
+`<` `>` がリダイレクトと解釈されて parse error になる（実際に踏んだ）。
+
+```
+SLACK_MENTION='<@U0A5V22PVTQ>'
+```
+
 ### 必要な設定
 
 `mac/.env`（gitignore 済み）に以下を置く。`SLACK_WEBHOOK_URL` が未設定の間は
@@ -402,6 +416,7 @@ ps -eo pid,ppid,etime,command | grep 'remote-control' | grep -v grep
 FIREBASE_URL=...
 FIREBASE_SECRET=...
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+SLACK_MENTION='<@U0A5V22PVTQ>'
 ```
 
 ### 動作確認
@@ -422,3 +437,10 @@ DRY_RUN=true SLOT=evening node scripts/remind-deadlines.mjs
 - **シェルで `$VAR` の直後に全角文字を置かない。** `（slot=$SLOT）` は
   `SLOT）` という変数名として読まれ、`set -u` 下で unbound になる。
   実際にこれを踏んだ。`${SLOT}` と波括弧で括ること。
+- **URL は http/https だけリンクにする。** タスクの `url` には Gmail の
+  メッセージID（`message:<...@...>`）が入ることがあり、そのまま
+  `<url|リンク>` にすると Slack で壊れたリンクになる。
+- **送信は失敗したら再試行する。** 1日2回しか走らないので、1回落とすと
+  その枠の通知が丸ごと消える。実際に hooks.slack.com へ数分つながらず
+  `fetch failed` で終わった（2026-09-20）。5秒から倍々で最大4回。
+  ただし 429 以外の 4xx は設定の誤りなので即座に諦める。

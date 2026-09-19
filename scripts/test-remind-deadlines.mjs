@@ -9,7 +9,7 @@
 
 import {
   daysUntil, todayJst, selectTasks, humanDays, formatTask, buildMessage, stateKey,
-  isLinkable, THRESHOLDS, SLOT_KEYS,
+  isLinkable, needsMention, MENTION_KEYS, postSlack, THRESHOLDS, SLOT_KEYS,
 } from './remind-deadlines.mjs';
 
 let pass = 0;
@@ -108,6 +108,80 @@ eq('末尾に余分な空行を残さない', msg.endsWith('\n'), false);
 const emsg = buildMessage(evening, { slot: 'evening', today });
 ok('夕方の見出し', emsg.startsWith('🌆'));
 ok('夕方は明日以降を含まない', !emsg.includes('明日が期限'));
+
+console.log('\n── ④-2 メンション ──');
+const MEN = '<@U0A5V22PVTQ>';
+const overdueOnly = selectTasks([{ name: 'A', deadline: '2026-09-10' }], today, 'morning');
+const todayOnly = selectTasks([{ name: 'A', deadline: today }], today, 'morning');
+const soonOnly = selectTasks([{ name: 'A', deadline: '2026-09-18' }], today, 'morning');
+const farOnly = selectTasks([{ name: 'A', deadline: '2026-09-22' }], today, 'morning');
+
+eq('期限切れがあればメンションする', needsMention(overdueOnly), true);
+eq('本日期限があればメンションする', needsMention(todayOnly), true);
+eq('3日以内だけならメンションしない', needsMention(soonOnly), false);
+eq('7日以内だけならメンションしない', needsMention(farOnly), false);
+eq('対象ゼロならメンションしない', needsMention([]), false);
+
+ok('メンションは本文の先頭に付く',
+  buildMessage(overdueOnly, { slot: 'morning', today, mention: MEN }).startsWith(`${MEN} 🌅`));
+ok('メンション不要なら付かない',
+  buildMessage(soonOnly, { slot: 'morning', today, mention: MEN }).startsWith('🌅'));
+ok('mention 未指定なら付かない',
+  buildMessage(overdueOnly, { slot: 'morning', today }).startsWith('🌅'));
+ok('夕方もメンションが付く',
+  buildMessage(overdueOnly, { slot: 'evening', today, mention: MEN }).startsWith(`${MEN} 🌆`));
+eq('メンション対象の区分は定義済みのものだけ',
+  MENTION_KEYS.filter((k) => !THRESHOLDS.map((b) => b.key).includes(k)), []);
+
+console.log('\n── ④-3 送信のリトライ ──');
+// 実際に hooks.slack.com へ数分つながらず、launchd 経由の実行が
+// fetch failed で終わった（2026-09-20）。瞬断で通知が消えないこと。
+process.env.SLACK_WEBHOOK_URL = 'https://hooks.slack.com/services/dummy';
+
+const res = (status, body) => ({ ok: status >= 200 && status < 300, status, text: async () => body });
+
+async function run(sequence) {
+  let calls = 0;
+  const fetchImpl = async () => {
+    const next = sequence[calls];
+    calls += 1;
+    if (next instanceof Error) throw next;
+    return next;
+  };
+  try {
+    const attempts = await postSlack('x', { fetchImpl, retries: 4, baseDelayMs: 0 });
+    return { ok: true, attempts, calls };
+  } catch (e) {
+    return { ok: false, message: e.message, calls };
+  }
+}
+
+let r = await run([res(200, 'ok')]);
+eq('一発で成功すれば1回で終わる', [r.ok, r.attempts, r.calls], [true, 1, 1]);
+
+r = await run([new Error('fetch failed'), new Error('fetch failed'), res(200, 'ok')]);
+eq('瞬断しても再試行して成功する', [r.ok, r.attempts, r.calls], [true, 3, 3]);
+
+r = await run([res(429, 'rate_limited'), res(200, 'ok')]);
+eq('429は待って再試行する', [r.ok, r.attempts], [true, 2]);
+
+r = await run([res(500, 'server_error'), res(200, 'ok')]);
+eq('5xxは再試行する', [r.ok, r.attempts], [true, 2]);
+
+r = await run([res(404, 'no_service'), res(200, 'ok')]);
+eq('404は再試行せず即座に諦める', [r.ok, r.calls], [false, 1]);
+ok('404は設定を疑う旨を伝える', r.message.includes('設定を確認'));
+
+r = await run([res(403, 'invalid_token'), res(200, 'ok')]);
+eq('403も再試行しない', [r.ok, r.calls], [false, 1]);
+
+const allFail = [1, 2, 3, 4].map(() => new Error('fetch failed'));
+r = await run(allFail);
+eq('全部失敗したら回数を使い切って失敗する', [r.ok, r.calls], [false, 4]);
+ok('失敗回数を伝える', r.message.includes('4回失敗'));
+
+r = await run([res(200, 'invalid_payload')]);
+eq('200でも本文がokでなければ成功にしない', r.ok, false);
 
 console.log('\n── ⑤ 二重送信の防止 ──');
 eq('日付と枠で鍵が決まる', stateKey('2026-09-15', 'morning'), '2026-09-15#morning');

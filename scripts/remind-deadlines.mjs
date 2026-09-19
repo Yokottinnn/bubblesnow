@@ -10,6 +10,8 @@
 //   FIREBASE_URL        必須
 //   FIREBASE_SECRET     必須（DBは認証必須。未指定だと401になる）
 //   SLACK_WEBHOOK_URL   必須（未設定なら送信せず終了。DRY_RUN では不要）
+//   SLACK_MENTION       任意。期限切れ／本日期限がある時だけ先頭に付ける
+//                       （例 <@U0A5V22PVTQ>）。未設定ならメンションしない
 //   SLOT                morning | evening（既定 morning）
 //   DRY_RUN             true なら送信せず本文を標準出力に出す
 //   STATE_FILE          二重送信防止の記録先（既定 .remind-state.json）
@@ -101,13 +103,27 @@ export function formatTask(t) {
   return `• ${icon}*${name}*　_${t.deadline}（${humanDays(t.days)}）_${loc}${url}`;
 }
 
+/**
+ * メンションを付ける区分。期限切れと本日期限だけに絞る。
+ * 全部の通知でメンションすると通知が日常化して効かなくなるので、
+ * 「今すぐ手を打つ必要があるもの」がある時だけ鳴らす。
+ */
+export const MENTION_KEYS = ['overdue', 'today'];
+
+/** メンションすべきか。該当区分が1件でもあれば true。 */
+export function needsMention(tasks) {
+  return tasks.some((t) => MENTION_KEYS.includes(t.bucket));
+}
+
 /** Slack に送る本文を組み立てる。対象ゼロなら null（＝送らない）。 */
-export function buildMessage(tasks, { slot = 'morning', today } = {}) {
+export function buildMessage(tasks, { slot = 'morning', today, mention = '' } = {}) {
   if (!tasks.length) return null;
 
-  const heading = slot === 'evening'
+  const base = slot === 'evening'
     ? `🌆 今日中のタスク確認（${today}）`
     : `🌅 今日の期限リマインド（${today}）`;
+  // メンションは先頭に置く。本文の途中だと通知のプレビューで見えない。
+  const heading = mention && needsMention(tasks) ? `${mention} ${base}` : base;
 
   const lines = [heading, ''];
   for (const b of THRESHOLDS) {
@@ -139,19 +155,50 @@ async function fbGet(path) {
   return res.json();
 }
 
-async function postSlack(text) {
+const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+
+/**
+ * Slack へ送る。失敗したら間隔を空けて数回試す。
+ *
+ * 1日2回しか走らないので、1回落とすとその枠の通知が丸ごと消える。
+ * 実際に hooks.slack.com へ数分間つながらない事象が起き、launchd 経由の
+ * 実行が fetch failed で終わった（2026-09-20）。数分の瞬断で期限切れの
+ * 通知が静かに失われるのは困るので、待ってから鳴らし直す。
+ *
+ * 4xx（URL誤り・アプリ削除など）は何度試しても直らないので即座に諦める。
+ */
+export async function postSlack(text, { fetchImpl = fetch, retries = 4, baseDelayMs = 5000 } = {}) {
   const hook = process.env.SLACK_WEBHOOK_URL || '';
   if (!hook) throw new Error('SLACK_WEBHOOK_URL が未設定です');
-  const res = await fetch(hook, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, mrkdwn: true }),
-  });
-  const body = await res.text();
-  // Slack は失敗時も 200 を返さないので、本文まで見て判断する
-  if (!res.ok || body.trim() !== 'ok') {
-    throw new Error(`Slack 送信失敗: status=${res.status} body=${body.slice(0, 200)}`);
+
+  let lastError;
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    try {
+      const res = await fetchImpl(hook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, mrkdwn: true }),
+      });
+      const body = (await res.text()).trim();
+      if (res.ok && body === 'ok') return attempt;
+
+      // 429 は待てば通る。それ以外の 4xx は設定が悪いので再試行しても無駄。
+      if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+        throw new Error(`Slack 送信失敗（設定を確認）: status=${res.status} body=${body.slice(0, 200)}`);
+      }
+      lastError = new Error(`Slack 送信失敗: status=${res.status} body=${body.slice(0, 200)}`);
+    } catch (e) {
+      if (String(e.message).includes('設定を確認')) throw e;
+      lastError = e;
+    }
+
+    if (attempt < retries) {
+      const wait = baseDelayMs * 2 ** (attempt - 1);
+      console.log(`  送信に失敗（${attempt}/${retries}）。${wait / 1000}秒後に再試行: ${lastError.message}`);
+      await sleep(wait);
+    }
   }
+  throw new Error(`Slack 送信に${retries}回失敗しました: ${lastError.message}`);
 }
 
 async function readState(file) {
@@ -173,7 +220,8 @@ async function main() {
   }
 
   const tasks = selectTasks(await fbGet(`${BASE}/tasks`), today, slot);
-  const message = buildMessage(tasks, { slot, today });
+  const mention = process.env.SLACK_MENTION || '';
+  const message = buildMessage(tasks, { slot, today, mention });
 
   // ★件数だけをログに出す。タスク名は絶対に出さない★
   console.log(`[${new Date().toISOString()}] slot=${slot} today=${today} 対象=${tasks.length}件`);
@@ -192,9 +240,9 @@ async function main() {
     return;
   }
 
-  await postSlack(message);
+  const attempts = await postSlack(message);
   await writeFile(stateFile, JSON.stringify({ lastSent: key, at: new Date().toISOString() }, null, 2));
-  console.log('Slack へ送信しました。');
+  console.log(`Slack へ送信しました。${attempts > 1 ? `（${attempts}回目で成功）` : ''}`);
 }
 
 // テストから import したときに実行されないよう、直接実行のときだけ動かす。
