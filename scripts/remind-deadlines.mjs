@@ -32,11 +32,12 @@ export const THRESHOLDS = [
   { key: 'd7', label: '7日以内', emoji: '🗓️', match: (d) => d >= 4 && d <= 7 },
 ];
 
-// 夕方は「今日中に片づける必要があるもの」だけに絞る。
-// 朝に全部見せているので、夕方も同じ量を流すと通知疲れを起こす。
+// 夕方は直近3日までに絞る。7日先は朝だけでよく、夕方も同じ量を流すと
+// 通知疲れを起こす。逆に3日以内はメンション対象なので、夕方の本文にも
+// 載っていないとメンションする相手が本文に居ない状態になる。
 export const SLOT_KEYS = {
   morning: ['overdue', 'today', 'tomorrow', 'd3', 'd7'],
-  evening: ['overdue', 'today'],
+  evening: ['overdue', 'today', 'tomorrow', 'd3'],
 };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -104,11 +105,11 @@ export function formatTask(t) {
 }
 
 /**
- * メンションを付ける区分。期限切れと本日期限だけに絞る。
- * 全部の通知でメンションすると通知が日常化して効かなくなるので、
- * 「今すぐ手を打つ必要があるもの」がある時だけ鳴らす。
+ * メンションを付ける区分。期限切れと、3日以内に期限が来るもの。
+ * 7日先だけの日は鳴らさない。全部の通知でメンションすると日常化して
+ * 効かなくなるので、手を打たないと間に合わない範囲に絞っている。
  */
-export const MENTION_KEYS = ['overdue', 'today'];
+export const MENTION_KEYS = ['overdue', 'today', 'tomorrow', 'd3'];
 
 /** メンションすべきか。該当区分が1件でもあれば true。 */
 export function needsMention(tasks) {

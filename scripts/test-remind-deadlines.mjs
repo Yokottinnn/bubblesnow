@@ -59,7 +59,7 @@ eq('朝は8日後と完了と期限なしを除く5件', morning.map((t) => t.na
 eq('期限が近い順に並ぶ', morning.map((t) => t.days), [-5, 0, 1, 3, 7]);
 
 const evening = selectTasks(sample, today, 'evening');
-eq('夕方は期限切れと本日だけ', evening.map((t) => t.name), ['期限切れ', '本日']);
+eq('夕方は3日以内まで（7日先は朝だけ）', evening.map((t) => t.name), ['期限切れ', '本日', '明日', '3日後']);
 
 eq('Firebaseがオブジェクトで返しても動く', selectTasks({ a: sample[1], b: sample[2] }, today, 'morning').length, 2);
 eq('nullでも落ちない', selectTasks(null, today, 'morning'), []);
@@ -107,7 +107,8 @@ eq('末尾に余分な空行を残さない', msg.endsWith('\n'), false);
 
 const emsg = buildMessage(evening, { slot: 'evening', today });
 ok('夕方の見出し', emsg.startsWith('🌆'));
-ok('夕方は明日以降を含まない', !emsg.includes('明日が期限'));
+ok('夕方も3日以内までは含む', emsg.includes('3日以内'));
+ok('夕方は7日以内を含まない', !emsg.includes('7日以内'));
 
 console.log('\n── ④-2 メンション ──');
 const MEN = '<@U0A5V22PVTQ>';
@@ -118,14 +119,18 @@ const farOnly = selectTasks([{ name: 'A', deadline: '2026-09-22' }], today, 'mor
 
 eq('期限切れがあればメンションする', needsMention(overdueOnly), true);
 eq('本日期限があればメンションする', needsMention(todayOnly), true);
-eq('3日以内だけならメンションしない', needsMention(soonOnly), false);
+eq('3日以内ならメンションする', needsMention(soonOnly), true);
+eq('明日期限ならメンションする',
+  needsMention(selectTasks([{ name: 'A', deadline: '2026-09-16' }], today, 'morning')), true);
 eq('7日以内だけならメンションしない', needsMention(farOnly), false);
 eq('対象ゼロならメンションしない', needsMention([]), false);
 
 ok('メンションは本文の先頭に付く',
   buildMessage(overdueOnly, { slot: 'morning', today, mention: MEN }).startsWith(`${MEN} 🌅`));
 ok('メンション不要なら付かない',
-  buildMessage(soonOnly, { slot: 'morning', today, mention: MEN }).startsWith('🌅'));
+  buildMessage(farOnly, { slot: 'morning', today, mention: MEN }).startsWith('🌅'));
+ok('3日以内にはメンションが付く',
+  buildMessage(soonOnly, { slot: 'morning', today, mention: MEN }).startsWith(`${MEN} 🌅`));
 ok('mention 未指定なら付かない',
   buildMessage(overdueOnly, { slot: 'morning', today }).startsWith('🌅'));
 ok('夕方もメンションが付く',
