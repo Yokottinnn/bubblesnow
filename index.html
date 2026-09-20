@@ -315,6 +315,22 @@ var openComment=function(r){
 var prev=commented[String(r.title||"").trim()];
 sCoId(r.id);sCoVote(prev?prev.vote:0);sCoText(prev?prev.text:"");sCoMsg("");
 };
+/* ★カードから直接投票する★
+   評価は 💬 を開いてから選ぶ形だったが、開く操作そのものが手間で
+   結局ほとんど押されない。学習にとって 👍👎 は最も重い信号なので、
+   押されないこと自体が損失になる。カード上で1タップで送れるようにする。
+   理由を書きたいときだけ 💬 を開く（そちらは従来どおり）。 */
+var _qv=useState(""),quickMsg=_qv[0],sQuickMsg=_qv[1];
+var quickVote=function(r,vote){
+var prev=commented[String(r.title||"").trim()];
+/* 同じ側をもう一度押したら取り消し。誤タップを戻せないと押しにくい。 */
+var next=(prev&&prev.vote===vote)?0:vote;
+sQuickMsg(r.id+":saving");
+Promise.resolve(onComment?onComment(r,next,prev?prev.text:""):false).then(function(ok){
+sQuickMsg(r.id+(ok?":ok":":ng"));
+setTimeout(function(){sQuickMsg("");},1200);
+});
+};
 var submitComment=function(r){
 if(!coVote)return;
 sCoMsg("保存中...");
@@ -370,7 +386,18 @@ r.location?h("div",{style:{marginTop:3}},h("a",{href:"https://www.google.com/map
 h("div",{style:{display:"flex",flexDirection:"column",gap:6,flexShrink:0,alignSelf:"center"}},
 h("button",{onClick:function(){logRecEvent(r,"add");onAdd(r);},style:{width:32,height:32,borderRadius:8,border:"none",background:"linear-gradient(135deg,#845EF7,#5C7CFA)",color:"#fff",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(132,94,247,.3)"}},"+"),
 h("button",{onClick:function(){logRecEvent(r,"dismiss");onDismiss(r.id);},style:{width:32,height:32,borderRadius:8,border:"1px solid rgba(255,255,255,.1)",background:"rgba(255,255,255,.04)",color:"#666",fontSize:18,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}},"−"),
-h("button",{onClick:function(){coId===r.id?sCoId(null):openComment(r);},title:"この提案について一言",style:{width:32,height:32,borderRadius:8,border:commented[String(r.title||"").trim()]?"1px solid rgba(132,94,247,.45)":"1px solid rgba(255,255,255,.1)",background:commented[String(r.title||"").trim()]?"rgba(132,94,247,.12)":"rgba(255,255,255,.04)",color:commented[String(r.title||"").trim()]?"#B197FC":"#666",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}},commented[String(r.title||"").trim()]?(commented[String(r.title||"").trim()].vote>0?"👍":"👎"):"💬")
+(function(){
+var prev=commented[String(r.title||"").trim()];
+var v=prev?prev.vote:0;
+var st=quickMsg.indexOf(r.id+":")===0?quickMsg.split(":")[1]:"";
+var mk=function(vote,on,label,col){return h("button",{onClick:function(){quickVote(r,vote);},title:vote>0?"もっと見たい":"いらない",style:{width:32,height:32,borderRadius:8,border:on?"1px solid "+col:"1px solid rgba(255,255,255,.1)",background:on?col+"22":"rgba(255,255,255,.04)",color:on?col:"#666",fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",opacity:st==="saving"?.5:1}},label);};
+return h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+mk(1,v>0,"👍","#51CF66"),mk(-1,v<0,"👎","#FF6B6B"));
+})(),
+h("button",{onClick:function(){coId===r.id?sCoId(null):openComment(r);},title:"理由を書く",style:{width:32,height:32,borderRadius:8,border:commented[String(r.title||"").trim()]?"1px solid rgba(132,94,247,.45)":"1px solid rgba(255,255,255,.1)",background:commented[String(r.title||"").trim()]?"rgba(132,94,247,.12)":"rgba(255,255,255,.04)",color:commented[String(r.title||"").trim()]?"#B197FC":"#666",fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}},/* 評価そのものは隣の 👍👎 が示すので、ここは常に 💬。
+   以前は評価済みだと 👍/👎 を出していたが、独立したボタンを
+   置いたことで同じ絵文字が2つ並び、どちらが何か分からなくなる。 */
+"💬")
 ))
 ,coId===r.id?h("div",{style:{marginTop:12,paddingTop:12,borderTop:"1px solid rgba(255,255,255,.08)"}},
 h("div",{style:{color:"rgba(255,255,255,.45)",fontSize:10,fontWeight:600,letterSpacing:1,marginBottom:7}},"この提案について"),
@@ -558,11 +585,20 @@ sEditRec(null);
    2つだけで、どちらも行動から推測したものだった。ここで初めて
    利用者が明示的に「もっと見たい / いらない」を言えるようになる。 */
 var saveRecComment=function(rec,vote,text){
-if(!rec||!vote)return Promise.resolve(false);
-var entry={title:String(rec.title||"").trim(),text:String(text||"").trim(),vote:vote,source:rec.source||"",at:new Date().toISOString()};
+if(!rec)return Promise.resolve(false);
+var title=String(rec.title||"").trim();
 // 同じおすすめへの言い直しは上書きする。迷って押し直したぶんが
 // 重複して学習に効いてしまうため。
-var next=recComments.filter(function(c){return c&&c.title!==entry.title;}).concat([entry]);
+var rest=recComments.filter(function(c){return c&&c.title!==title;});
+/* vote 0 は取り消し。カードから同じ側をもう一度押したときに来る。
+   以前は !vote で弾いていたため、押し間違いを戻せなかった。
+   記録ごと消すのが正しい（0 のまま残すと学習側で扱いに困る）。 */
+if(!vote){
+sRecComments(rest);
+return Storage.set("users/yokota/recComments",rest);
+}
+var entry={title:title,text:String(text||"").trim(),vote:vote,source:rec.source||"",at:new Date().toISOString()};
+var next=rest.concat([entry]);
 sRecComments(next);
 // Storage.set は true/false を返す。失敗したら画面にそう出す。
 return Storage.set("users/yokota/recComments",next);
