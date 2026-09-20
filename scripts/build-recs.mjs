@@ -438,6 +438,10 @@ export function toRec(item) {
     // スキーム（javascript: など）は許可しない。
     url: /^(https?|message):/.test(String(item.url || '')) ? item.url : '',
     location: strip(item.location || ''),
+    // いつ出したか。learn-preferences が「出してから N 日、一度も
+    // 開かれていない」を測るのに要る。無反応こそ最大の材料なので、
+    // 経過時間が分からないとその判断ができない。
+    createdAt: new Date().toISOString(),
   };
 }
 

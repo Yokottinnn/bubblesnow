@@ -37,6 +37,9 @@ const MIN_COUNT = Number(process.env.MIN_COUNT || 3);
 const MAX_TERMS = Number(process.env.MAX_TERMS || 200);
 // 学習分がスコア全体を支配しないための上限（build-recs 側でも clamp する）。
 const MAX_WEIGHT = 3;
+// 出してから何日、何の反応も無ければ「興味が無い」とみなすか。
+// 短くすると、たまたま忙しかった週のものまで負例になる。
+const IGNORED_AFTER_DAYS = Number(process.env.IGNORED_AFTER_DAYS || 7);
 
 async function fbGet(path) {
   const res = await fetch(`${FIREBASE_URL}/${path}.json${auth}`);
@@ -110,6 +113,46 @@ export function learnWeights(adopted, dismissed, opts = {}) {
   return scored.slice(0, maxTerms);
 }
 
+/**
+ * recEvents（アプリが残した反応）を rec ID ごとにまとめる。
+ * キーは "<recId>__<kind>" で追記されるので、ここで畳む。
+ */
+export function groupEvents(raw) {
+  const byId = new Map();
+  for (const ev of Object.values(raw || {})) {
+    if (!ev || !ev.id || !ev.kind) continue;
+    const cur = byId.get(ev.id) || { id: ev.id, title: ev.title || '', kinds: new Set() };
+    cur.kinds.add(ev.kind);
+    if (ev.title && !cur.title) cur.title = ev.title;
+    byId.set(ev.id, cur);
+  }
+  return byId;
+}
+
+/**
+ * 「出したのに一度も触られなかった」おすすめを拾う。
+ *
+ * ★これが学習の本命★
+ * タスク化と「−」だけでは、利用者が実際に取った行動のごく一部しか見ていない。
+ * 実際に最も多いのは、出しても開かれず黙って流れていくもので、そこに
+ * 「興味の無い話題」の情報がいちばん多く含まれている。
+ *
+ * 出したばかりのものを負例にしないよう、日数で線を引く。createdAt が無い
+ * 古いおすすめは経過が測れないので対象外にする（誤って負例にしない）。
+ */
+export function findIgnored(recs, events, now = Date.now(), days = IGNORED_AFTER_DAYS) {
+  const out = [];
+  for (const r of recs) {
+    if (!r || !r.title) continue;
+    if (events.has(r.id)) continue;           // 何かしら反応があった
+    if (!r.createdAt) continue;               // 経過が測れない
+    const age = (now - Date.parse(r.createdAt)) / 86400000;
+    if (Number.isNaN(age) || age < days) continue;
+    out.push(String(r.title));
+  }
+  return out;
+}
+
 async function main() {
   console.log('=== 採用・却下からの学習（LLM不使用・課金なし）===\n');
 
@@ -147,9 +190,40 @@ async function main() {
     dismissed.push(...votedDown);
   }
 
+  /* ★アプリでの反応から学ぶ（recEvents）★
+     ここまでの材料は「タスク化した」「−を押した」「👍/👎 を付けた」で、
+     どれも利用者が能動的に手を動かしたものだけだった。しかし実際に
+     いちばん件数が多いのは「出したが何もされなかった」で、興味の無い
+     話題の情報はそこに最も多くある。それを拾えるようにする。
+
+       開いた（open）       … 話題そのものには関心がある → 弱い正例
+       無反応のまま N 日    … 見る気にもならなかった     → 弱い負例
+
+     「開いたが追加しなかった」を負例にはしない。開いた時点で話題には
+     興味があり、その回の中身が刺さらなかっただけだから。ここを負例に
+     すると、関心のある分野ごと消してしまう。
+
+     add / dismiss はここでは数えない。既に tasks の note と
+     dismissedTitles から拾っており、二重に数えると効きすぎる。 */
+  const eventsRaw = (await fbGet(`${BASE}/recEvents`).catch(() => ({}))) || {};
+  const events = groupEvents(eventsRaw);
+  const opened = [...events.values()]
+    .filter((e) => e.kinds.has('open'))
+    .map((e) => e.title)
+    .filter(Boolean);
+
+  const recsRaw = (await fbGet(`${BASE}/recommendations`).catch(() => ({}))) || {};
+  const recs = (Array.isArray(recsRaw) ? recsRaw : Object.values(recsRaw)).filter(Boolean);
+  const ignored = findIgnored(recs, events);
+
+  adopted.push(...opened);
+  dismissed.push(...ignored);
+
   console.log(`正例（おすすめから追加したタスク）: ${adopted.length - votedUp.length * WEIGHT}件`);
   console.log(`負例（却下したタイトル）        : ${dismissed.length - votedDown.length * WEIGHT}件`);
   console.log(`アプリでの評価                  : 👍 ${votedUp.length}件 / 👎 ${votedDown.length}件（各 ${WEIGHT} 倍で加算）`);
+  console.log(`詳細を開いた（弱い正例）        : ${opened.length}件`);
+  console.log(`${IGNORED_AFTER_DAYS}日以上 無反応（弱い負例）     : ${ignored.length}件 / 現在のおすすめ ${recs.length}件`);
   console.log('※ 中身はログに出しません（public リポジトリのため）\n');
 
   if (adopted.length < 5) {
@@ -171,7 +245,7 @@ async function main() {
 
   await writeFile(OUT, JSON.stringify({
     learnedAt: new Date().toISOString(),
-    counts: { adopted: adopted.length, dismissed: dismissed.length, terms: weights.length },
+    counts: { adopted: adopted.length, dismissed: dismissed.length, opened: opened.length, ignored: ignored.length, terms: weights.length },
     weights,
   }, null, 2));
 
