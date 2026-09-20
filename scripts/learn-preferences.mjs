@@ -139,12 +139,20 @@ export function groupEvents(raw) {
  *
  * 出したばかりのものを負例にしないよう、日数で線を引く。createdAt が無い
  * 古いおすすめは経過が測れないので対象外にする（誤って負例にしない）。
+ *
+ * 👍👎 を付けたものも対象外。明示的な意思表示があるのに「無反応」として
+ * 数えると、正例と負例に同じものを入れることになる。
  */
-export function findIgnored(recs, events, now = Date.now(), days = IGNORED_AFTER_DAYS) {
+export function findIgnored(recs, events, now = Date.now(), days = IGNORED_AFTER_DAYS, votedTitles = new Set()) {
   const out = [];
   for (const r of recs) {
     if (!r || !r.title) continue;
     if (events.has(r.id)) continue;           // 何かしら反応があった
+    // 👍👎 は recEvents ではなく recComments に入る。ここを見ないと、
+    // 「👍 を押したが詳細は開かなかった」ものが無反応と判定され、
+    // 本人が明示的に「もっと見たい」と言ったものを同時に負例として
+    // 学習してしまう。タイトルで突き合わせる（recComments に id は無い）。
+    if (votedTitles.has(String(r.title).trim())) continue;
     if (!r.createdAt) continue;               // 経過が測れない
     const age = (now - Date.parse(r.createdAt)) / 86400000;
     if (Number.isNaN(age) || age < days) continue;
@@ -214,7 +222,9 @@ async function main() {
 
   const recsRaw = (await fbGet(`${BASE}/recommendations`).catch(() => ({}))) || {};
   const recs = (Array.isArray(recsRaw) ? recsRaw : Object.values(recsRaw)).filter(Boolean);
-  const ignored = findIgnored(recs, events);
+  // 👍👎 を付けたタイトル。無反応の判定から外す。
+  const votedTitles = new Set(comments.map((c) => String(c.title || '').trim()).filter(Boolean));
+  const ignored = findIgnored(recs, events, Date.now(), IGNORED_AFTER_DAYS, votedTitles);
 
   adopted.push(...opened);
   dismissed.push(...ignored);

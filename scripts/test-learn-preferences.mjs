@@ -61,6 +61,21 @@ eq('おすすめが空でも落ちない', findIgnored([], ev, NOW), []);
 eq('createdAt が壊れていても落ちない',
   findIgnored([{ id: 'x', title: 'A', createdAt: 'ではない' }], ev, NOW), []);
 
+/* ★正例と負例に同じものを入れない★
+   👍👎 は recEvents ではなく recComments に入るため、findIgnored が
+   recEvents だけを見ていると「👍 を押したが詳細は開かなかった」ものが
+   無反応と判定される。本人が明示的に「もっと見たい」と言ったものを
+   同時に負例として学習してしまうので、タイトルで突き合わせて外す。 */
+const voted = new Set(['無反応で30日']);
+eq('👍👎 を付けたものは無反応にしない',
+  findIgnored(recs, ev, NOW, 7, voted), ['無反応でちょうど7日']);
+eq('投票が無ければ従来どおり',
+  findIgnored(recs, ev, NOW, 7, new Set()), ['無反応で30日', '無反応でちょうど7日']);
+eq('前後の空白があっても突き合わせる',
+  findIgnored([{ id: 'z', title: '  余白あり  ', createdAt: ago(30) }], ev, NOW, 7, new Set(['余白あり'])), []);
+eq('votedTitles を省略しても落ちない',
+  findIgnored([{ id: 'z', title: 'B', createdAt: ago(30) }], ev, NOW, 7), ['B']);
+
 console.log('\n── ③ 重みの向き ──');
 // 正例にだけ出る語は正、負例にだけ出る語は負になること
 const adopted = Array(8).fill('くら寿司の北海フェアに行く');
