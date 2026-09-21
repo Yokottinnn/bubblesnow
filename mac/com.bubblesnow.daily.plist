@@ -13,17 +13,15 @@
   </array>
 
   <!-- Mac のローカル時刻で解釈されるので UTC 換算は不要 -->
-  <!-- 1日2回。朝7時と夜21時に材料を集め直して候補を入れ替える。
-       期限リマインド（8時/22時）の1時間前に置いているのは、
-       通知を見る時点で候補が最新になっているようにするため。 -->
+  <!-- 1日2回。0時と14時に材料を集め直して候補を入れ替える。 -->
   <key>StartCalendarInterval</key>
   <array>
     <dict>
-      <key>Hour</key><integer>7</integer>
+      <key>Hour</key><integer>0</integer>
       <key>Minute</key><integer>0</integer>
     </dict>
     <dict>
-      <key>Hour</key><integer>21</integer>
+      <key>Hour</key><integer>14</integer>
       <key>Minute</key><integer>0</integer>
     </dict>
   </array>

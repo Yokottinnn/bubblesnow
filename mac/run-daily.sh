@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mac 上で recs 生成を回す。launchd から 1日2回（7:00 / 21:00）呼ばれる。
+# Mac 上で recs 生成を回す。launchd から 1日2回（0:00 / 14:00）呼ばれる。
 #
 # ★クラウドではなく Mac で回す理由★
 #   - X をログイン済みセッションで読める（Cookie を public リポジトリの Secrets に置かずに済む）

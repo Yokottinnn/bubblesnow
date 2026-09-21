@@ -280,7 +280,7 @@ recommendations  : Array / 9件
 ## おすすめの自動学習（recEvents）
 
 「明らかに興味の無い話題を出し続ける」のを止めるための仕組み。
-日次ジョブ（7:00 / 21:00 JST の1日2回）の `learn-preferences.mjs` が学び直す。
+日次ジョブ（0:00 / 14:00 JST の1日2回）の `learn-preferences.mjs` が学び直す。
 
 ### 記録する反応
 
