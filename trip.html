@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>旅のしおり</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧳</text></svg>">
+<!--
+  旅のしおり。URL を知っていれば誰でも読み書きできる。
+
+  ★認証を置いていない★
+  夫婦2人で使う前提で、ログインの手間を無くすことを優先した。
+  Firebase のルールは /trip だけを公開にしてあり、同じ DB にある
+  users/yokota（タスク・おすすめ）は従来どおり UID 限定のまま。
+  URL が漏れれば第三者に書き換えられるので、旅程以上の情報は置かないこと。
+
+  ★同時編集★
+  Realtime Database の on('value') で双方向に同期する。
+  入力中のフィールドだけは上書きしない（打っている途中で他方の保存が
+  届くと文字が消えるため）。
+-->
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+       background:#0f1020;color:#e9e9f0;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+  header{position:sticky;top:0;z-index:10;background:rgba(15,16,32,.94);backdrop-filter:blur(8px);
+         padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.08)}
+  h1{margin:0;font-size:19px;display:flex;align-items:center;gap:8px}
+  h1 input{flex:1;min-width:0}
+  .sync{font-size:11px;color:#7f86a8;margin-top:4px;height:14px}
+  .sync.ok{color:#51CF66}
+  main{padding:12px 14px 96px;max-width:720px;margin:0 auto}
+  .day{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+       border-radius:14px;padding:12px 13px;margin-bottom:12px}
+  .dayhead{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .dayhead input{font-weight:700;font-size:15px}
+  input,textarea{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+       border-radius:9px;color:#e9e9f0;padding:9px 11px;font-size:15px;font-family:inherit;width:100%}
+  input:focus,textarea:focus{outline:none;border-color:#7c6cf0;background:rgba(255,255,255,.09)}
+  textarea{resize:vertical;min-height:64px;line-height:1.6}
+  .item{display:flex;gap:8px;align-items:flex-start;margin-bottom:7px}
+  .item .time{width:76px;flex:none;text-align:center}
+  .item .what{flex:1;min-width:0}
+  button{font-family:inherit;cursor:pointer}
+  .x{flex:none;width:34px;height:38px;border:none;background:transparent;color:#5d6484;font-size:17px;border-radius:8px}
+  .x:hover{background:rgba(255,107,107,.14);color:#FF6B6B}
+  .add{width:100%;padding:9px;border:1px dashed rgba(255,255,255,.18);background:transparent;
+       color:#9aa0c0;border-radius:9px;font-size:13px;margin-top:3px}
+  .add:hover{border-color:#7c6cf0;color:#b9b0ff}
+  .addday{width:100%;padding:13px;border:1px dashed rgba(255,255,255,.2);background:transparent;
+          color:#b9b0ff;border-radius:13px;font-size:14px;font-weight:600;margin-bottom:12px}
+  .sec{margin-bottom:12px}
+  .sec label{display:block;font-size:11px;color:#8087a8;font-weight:700;letter-spacing:1px;margin-bottom:5px}
+  .foot{text-align:center;color:#565c7a;font-size:11px;padding:8px 0 4px;line-height:1.8}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧳 <input id="title" placeholder="旅の名前"></h1>
+  <div class="sync" id="sync">接続中…</div>
+</header>
+
+<main>
+  <div class="sec">
+    <label>📅 日程</label>
+    <input id="dates" placeholder="例: 11/22(土) 〜 11/24(月)">
+  </div>
+  <div class="sec">
+    <label>🏨 宿・交通</label>
+    <textarea id="stay" placeholder="宿の名前、住所、チェックイン時刻&#10;飛行機・新幹線の便名や座席"></textarea>
+  </div>
+
+  <div id="days"></div>
+  <button class="addday" id="addday">＋ 日程を追加</button>
+
+  <div class="sec">
+    <label>🎒 持ち物</label>
+    <textarea id="packing" placeholder="パスポート&#10;充電器&#10;常備薬"></textarea>
+  </div>
+  <div class="sec">
+    <label>📝 メモ</label>
+    <textarea id="memo" placeholder="行きたい店、予算、やること"></textarea>
+  </div>
+
+  <div class="foot">
+    変更は自動で保存され、相手の画面にもすぐ反映されます。<br>
+    このURLを知っている人は誰でも編集できます。
+  </div>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
+/* DB URL は index.html で既に公開されている値。同じプロジェクトの
+   /trip ノードだけを使う。 */
+firebase.initializeApp({
+  apiKey:"AIzaSyBvWy2zxQRazmGJWU0-NEaw2wxxpb1WkJU",
+  authDomain:"nydaytodo-e0f20.firebaseapp.com",
+  databaseURL:"https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:"nydaytodo-e0f20"
+});
+
+/* ?id=xxx で複数の旅を分けられる。指定が無ければ default。 */
+var TRIP = new URLSearchParams(location.search).get("id") || "default";
+var ref = firebase.database().ref("trip/" + TRIP);
+
+var sync = document.getElementById("sync");
+var state = { title:"", dates:"", stay:"", packing:"", memo:"", days:[] };
+var applying = false;   /* 自分で描画している最中の input を保存しない */
+
+function say(msg, ok){ sync.textContent = msg; sync.className = "sync" + (ok ? " ok" : ""); }
+
+/* 打っている最中のフィールドは上書きしない。相手の保存が届いたときに
+   カーソルが飛んだり文字が消えたりするのを防ぐ。 */
+function setVal(el, v){
+  if (document.activeElement === el) return;
+  if (el.value !== (v || "")) el.value = v || "";
+}
+
+var FIELDS = ["title","dates","stay","packing","memo"];
+
+function render(){
+  applying = true;
+  FIELDS.forEach(function(k){ setVal(document.getElementById(k), state[k]); });
+
+  var wrap = document.getElementById("days");
+  /* 日ごと・項目ごとに作り直すと入力欄が毎回入れ替わってしまうので、
+     件数が変わったときだけ組み立て直す。 */
+  if (wrap.childElementCount !== state.days.length) wrap.innerHTML = "";
+  state.days.forEach(function(day, di){
+    var box = wrap.children[di];
+    if (!box){
+      box = document.createElement("div");
+      box.className = "day";
+      box.innerHTML =
+        '<div class="dayhead"><input class="dlabel" placeholder="1日目 11/22(土)">' +
+        '<button class="x" title="この日を削除">🗑</button></div>' +
+        '<div class="items"></div>' +
+        '<button class="add">＋ 予定を追加</button>';
+      wrap.appendChild(box);
+      box.querySelector(".dlabel").addEventListener("input", function(e){
+        if (applying) return;
+        state.days[di].label = e.target.value; save();
+      });
+      box.querySelector(".dayhead .x").addEventListener("click", function(){
+        state.days.splice(di,1); save(); render();
+      });
+      box.querySelector(".add").addEventListener("click", function(){
+        state.days[di].items.push({time:"",what:""}); save(); render();
+        var list = box.querySelectorAll(".item .what");
+        if (list.length) list[list.length-1].focus();
+      });
+    }
+    setVal(box.querySelector(".dlabel"), day.label);
+
+    var items = box.querySelector(".items");
+    if (items.childElementCount !== day.items.length) items.innerHTML = "";
+    day.items.forEach(function(it, ii){
+      var row = items.children[ii];
+      if (!row){
+        row = document.createElement("div");
+        row.className = "item";
+        row.innerHTML =
+          '<input class="time" placeholder="10:00">' +
+          '<input class="what" placeholder="何をする？">' +
+          '<button class="x" title="削除">✕</button>';
+        items.appendChild(row);
+        row.querySelector(".time").addEventListener("input", function(e){
+          if (applying) return;
+          state.days[di].items[ii].time = e.target.value; save();
+        });
+        row.querySelector(".what").addEventListener("input", function(e){
+          if (applying) return;
+          state.days[di].items[ii].what = e.target.value; save();
+        });
+        row.querySelector(".x").addEventListener("click", function(){
+          state.days[di].items.splice(ii,1); save(); render();
+        });
+      }
+      setVal(row.querySelector(".time"), it.time);
+      setVal(row.querySelector(".what"), it.what);
+    });
+  });
+  applying = false;
+}
+
+/* 打つたびに書くと通信が増えるので少し待つ。相手への反映が
+   遅れて見えない程度の 400ms にしてある。 */
+var timer = null;
+function save(){
+  clearTimeout(timer);
+  say("保存中…");
+  timer = setTimeout(function(){
+    ref.set(state)
+      .then(function(){ say("✓ 保存しました", true); })
+      .catch(function(e){ say("保存できませんでした: " + e.message); });
+  }, 400);
+}
+
+FIELDS.forEach(function(k){
+  document.getElementById(k).addEventListener("input", function(e){
+    if (applying) return;
+    state[k] = e.target.value; save();
+  });
+});
+
+document.getElementById("addday").addEventListener("click", function(){
+  state.days.push({ label:"", items:[{time:"",what:""}] });
+  save(); render();
+});
+
+ref.on("value", function(snap){
+  var v = snap.val();
+  if (v){
+    FIELDS.forEach(function(k){ state[k] = v[k] || ""; });
+    /* Firebase は空配列を落とすので、無ければ空配列に戻す。 */
+    state.days = (v.days || []).filter(Boolean).map(function(d){
+      return { label: d.label || "", items: (d.items || []).filter(Boolean) };
+    });
+  }
+  render();
+  say("接続中 ✓", true);
+}, function(e){
+  say("読み込めませんでした: " + e.message);
+});
+</script>
+</body>
+</html>
