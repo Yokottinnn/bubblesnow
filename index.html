@@ -329,6 +329,12 @@ sQuickMsg(r.id+":saving");
 Promise.resolve(onComment?onComment(r,next,prev?prev.text:""):false).then(function(ok){
 sQuickMsg(r.id+(ok?":ok":":ng"));
 setTimeout(function(){sQuickMsg("");},1200);
+/* ★👎 はその場で却下まで済ませる★
+   「いらない」と言ったものが一覧に残り続けると、結局あとで −
+   を押し直すことになり、同じ判断を二度させられる。評価と却下は
+   同じ意思なので一度で終わらせる。
+   取り消し（next が 0）では消さない。誤タップを戻しただけなので。 */
+if(ok&&next<0){logRecEvent(r,"dismiss");onDismiss(r.id);}
 });
 };
 var submitComment=function(r){
@@ -390,7 +396,7 @@ h("button",{onClick:function(){logRecEvent(r,"dismiss");onDismiss(r.id);},style:
 var prev=commented[String(r.title||"").trim()];
 var v=prev?prev.vote:0;
 var st=quickMsg.indexOf(r.id+":")===0?quickMsg.split(":")[1]:"";
-var mk=function(vote,on,label,col){return h("button",{onClick:function(){quickVote(r,vote);},title:vote>0?"もっと見たい":"いらない",style:{width:32,height:32,borderRadius:8,border:on?"1px solid "+col:"1px solid rgba(255,255,255,.1)",background:on?col+"22":"rgba(255,255,255,.04)",color:on?col:"#666",fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",opacity:st==="saving"?.5:1}},label);};
+var mk=function(vote,on,label,col){return h("button",{onClick:function(){quickVote(r,vote);},title:vote>0?"もっと見たい":"いらない（この場で却下します）",style:{width:32,height:32,borderRadius:8,border:on?"1px solid "+col:"1px solid rgba(255,255,255,.1)",background:on?col+"22":"rgba(255,255,255,.04)",color:on?col:"#666",fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",opacity:st==="saving"?.5:1}},label);};
 return h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
 mk(1,v>0,"👍","#51CF66"),mk(-1,v<0,"👎","#FF6B6B"));
 })(),
