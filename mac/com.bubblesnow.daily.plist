@@ -12,12 +12,21 @@
     <string>__REPO__/mac/run-daily.sh</string>
   </array>
 
-  <!-- 0:00 JST。Mac のローカル時刻で解釈されるので UTC 換算は不要 -->
+  <!-- Mac のローカル時刻で解釈されるので UTC 換算は不要 -->
+  <!-- 1日2回。朝7時と夜21時に材料を集め直して候補を入れ替える。
+       期限リマインド（8時/22時）の1時間前に置いているのは、
+       通知を見る時点で候補が最新になっているようにするため。 -->
   <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key><integer>0</integer>
-    <key>Minute</key><integer>0</integer>
-  </dict>
+  <array>
+    <dict>
+      <key>Hour</key><integer>7</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key><integer>21</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+  </array>
 
   <!-- 実行時刻に眠っていた場合、起きた直後に取り返す -->
   <key>RunAtLoad</key>

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mac 上で日次の recs 生成を回す。launchd から呼ばれる。
+# Mac 上で recs 生成を回す。launchd から 1日2回（7:00 / 21:00）呼ばれる。
 #
 # ★クラウドではなく Mac で回す理由★
 #   - X をログイン済みセッションで読める（Cookie を public リポジトリの Secrets に置かずに済む）
@@ -59,7 +59,7 @@ heartbeat() {
 
   git add mac/last-run.md
   git -c user.name="BubblesNow daily" -c user.email="noreply@localhost" \
-    commit -q -m "Record the daily run ($(date '+%Y-%m-%d'))" -- mac/last-run.md || return 0
+    commit -q -m "Record the daily run ($(date '+%Y-%m-%d %H:%M'))" -- mac/last-run.md || return 0
 
   # 昼間にクラウド側が main を進めていると push は弾かれる。
   # そこで諦めると心拍が溜まり続け、翌日の pull --ff-only も通らなくなって

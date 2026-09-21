@@ -66,6 +66,25 @@ eq('nullでも落ちない', selectTasks(null, today, 'morning'), []);
 eq('配列の穴で落ちない', selectTasks([null, sample[1], undefined], today, 'morning').length, 1);
 eq('status未設定はactive扱い', selectTasks([{ name: 'x', deadline: today }], today, 'morning').length, 1);
 
+/* ★アプリで片付けたものを鳴らさない★
+   「失敗」を足したとき、ここが status==="done" しか見ておらず、
+   失敗にしたタスクが翌朝も期限切れとして鳴った（2026-09-21 に実際に発生。
+   9/20 13:01 に失敗にした「浜離宮に行く」が 9/21 08:00 の通知に載った）。
+   状態が増えるたびに同じ取りこぼしをしないよう、active 以外は全部外す。 */
+const mixed = [
+  { name: '生きている', deadline: today, status: 'active' },
+  { name: '完了した', deadline: today, status: 'done' },
+  { name: '失敗した', deadline: today, status: 'failed' },
+  { name: '将来増える状態', deadline: today, status: 'archived' },
+  { name: 'status無し', deadline: today },
+];
+eq('active と status無し だけを通す',
+  selectTasks(mixed, today, 'morning').map((t) => t.name), ['status無し', '生きている']);
+eq('失敗したタスクは鳴らさない',
+  selectTasks([{ name: '失敗した', deadline: '2026-05-31', status: 'failed' }], today, 'morning'), []);
+eq('未知の状態も鳴らさない（既定で安全側）',
+  selectTasks([{ name: '謎', deadline: '2026-05-31', status: 'whatever' }], today, 'morning'), []);
+
 console.log('\n── ③ 表示 ──');
 eq('超過日数', humanDays(-5), '5日超過');
 eq('本日', humanDays(0), '本日');

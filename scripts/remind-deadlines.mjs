@@ -65,7 +65,11 @@ export function selectTasks(raw, today, slot = 'morning') {
 
   const picked = [];
   for (const t of arr) {
-    if (t.status === 'done') continue;
+    // 完了・失敗の両方を外す。done だけを見ていたため、アプリで「失敗」に
+    // したタスクが翌朝も期限切れとして鳴り続けた（実際に発生）。
+    // 新しい状態が増えたときに同じ取りこぼしをしないよう、
+    // 「active 以外は対象外」という向きで書く。status 未設定は active 扱い。
+    if (t.status && t.status !== 'active') continue;
     const days = daysUntil(t.deadline, today);
     if (days === null) continue;
     const bucket = THRESHOLDS.find((b) => b.match(days));
