@@ -23,57 +23,64 @@
 -->
 <style>
   *{box-sizing:border-box}
+  /* テーマは CSS 変数だけで切り替える。要素ごとの指定を触らずに済む。 */
+  :root{--bg:linear-gradient(180deg,#0f1020,#0f1020);--card:rgba(255,255,255,.04);
+        --accent:#7c6cf0;--ink:#e9e9f0;--sub:#8087a8}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
-       background:#0f1020;color:#e9e9f0;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
-       -webkit-text-size-adjust:100%}
-  header{position:sticky;top:0;z-index:10;background:rgba(15,16,32,.94);backdrop-filter:blur(8px);
-         padding:12px 14px 9px;border-bottom:1px solid rgba(255,255,255,.08)}
+       background:var(--bg);background-attachment:fixed;color:var(--ink);
+       padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+       -webkit-text-size-adjust:100%;min-height:100vh}
+  header{position:sticky;top:0;z-index:10;background:rgba(10,10,20,.82);backdrop-filter:blur(10px);
+         padding:12px 14px 9px;border-bottom:1px solid rgba(255,255,255,.08);position:relative}
+  #deco{position:absolute;inset:auto 0 0 0;height:60px;opacity:.7;pointer-events:none;z-index:-1}
+  #deco svg{width:100%;height:100%;display:block}
   .hrow{display:flex;align-items:center;gap:8px}
   h1{margin:0;font-size:18px;display:flex;align-items:center;gap:8px;flex:1;min-width:0}
   h1 input{flex:1;min-width:0}
   .sync{font-size:11px;color:#7f86a8;margin-top:4px;height:14px}
   .sync.ok{color:#51CF66}
+  .sync{color:var(--sub)}
   main{padding:12px 14px 96px;max-width:720px;margin:0 auto}
-  .day{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+  .day{background:var(--card);border:1px solid rgba(255,255,255,.08);
        border-radius:14px;padding:12px 13px;margin-bottom:12px}
   .dayhead{display:flex;gap:8px;align-items:center;margin-bottom:8px}
   .dayhead input{font-weight:700;font-size:15px}
   input,textarea,select{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
        border-radius:9px;color:#e9e9f0;padding:9px 11px;font-size:15px;font-family:inherit;width:100%}
-  input:focus,textarea:focus,select:focus{outline:none;border-color:#7c6cf0;background:rgba(255,255,255,.09)}
+  input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);background:rgba(255,255,255,.1)}
   textarea{resize:vertical;min-height:64px;line-height:1.6}
   button{font-family:inherit;cursor:pointer}
   .x{flex:none;width:34px;height:36px;border:none;background:transparent;color:#5d6484;font-size:16px;border-radius:8px}
   .x:hover{background:rgba(255,107,107,.14);color:#FF6B6B}
   .add{width:100%;padding:9px;border:1px dashed rgba(255,255,255,.18);background:transparent;
        color:#9aa0c0;border-radius:9px;font-size:13px;margin-top:3px}
-  .add:hover{border-color:#7c6cf0;color:#b9b0ff}
+  .add:hover{border-color:var(--accent);color:var(--accent)}
   .addday{width:100%;padding:13px;border:1px dashed rgba(255,255,255,.2);background:transparent;
-          color:#b9b0ff;border-radius:13px;font-size:14px;font-weight:600;margin-bottom:12px}
+          color:var(--accent);border-radius:13px;font-size:14px;font-weight:600;margin-bottom:12px}
   .sec{margin-bottom:12px}
-  .sec label{display:block;font-size:11px;color:#8087a8;font-weight:700;letter-spacing:1px;margin-bottom:5px}
-  .note{font-size:11px;color:#8087a8;margin-top:5px;min-height:14px}
+  .sec label{display:block;font-size:11px;color:var(--sub);font-weight:700;letter-spacing:1px;margin-bottom:5px}
+  .note{font-size:11px;color:var(--sub);margin-top:5px;min-height:14px}
   .foot{text-align:center;color:#565c7a;font-size:11px;padding:8px 0 4px;line-height:1.8}
 
   /* ── 予定の行 ── */
-  .item{display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.05);
+  .item{display:flex;gap:8px;align-items:center;background:var(--card);
         border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:8px 6px 8px 8px;margin-bottom:6px}
     .no{flex:none;width:24px;text-align:center;color:#4e5470;font-size:11px;font-weight:700;
       font-variant-numeric:tabular-nums}
   .body{flex:1;min-width:0;cursor:pointer;padding:2px 0}
-  .t{color:#b9b0ff;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+  .t{color:var(--accent);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
   .w{font-size:14px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .w.empty{color:#5d6484}
   .tags{font-size:10px;color:#7f86a8;margin-top:2px;display:flex;gap:7px;flex-wrap:wrap}
 
   /* ── 旅の一覧 ── */
-  .trip{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.04);
+  .trip{display:flex;align-items:center;gap:10px;background:var(--card);
         border:1px solid rgba(255,255,255,.08);border-radius:13px;padding:13px 14px;margin-bottom:9px;
         cursor:pointer}
-  .trip:hover{border-color:#7c6cf0;background:rgba(124,108,240,.09)}
+  .trip:hover{border-color:var(--accent)}
   .trip .n{flex:1;min-width:0}
   .trip .n b{font-size:15px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .trip .n span{font-size:11px;color:#8087a8}
+  .trip .n span{font-size:11px;color:var(--sub)}
 
   /* ── モーダル ── */
   .mask{position:fixed;inset:0;background:rgba(0,0,0,.62);display:flex;align-items:flex-end;
@@ -87,17 +94,32 @@
   .btns{display:flex;gap:9px;margin-top:16px}
   .btns button{flex:1;padding:13px;border-radius:11px;border:1px solid rgba(255,255,255,.14);
                background:transparent;color:#c9cde6;font-size:14px}
-  .btns .pri{border:none;background:linear-gradient(135deg,#845EF7,#5C7CFA);color:#fff;font-weight:700}
+  .btns .pri{border:none;background:var(--accent);color:#141420;font-weight:700}
   .btns .del{border-color:rgba(255,107,107,.3);color:#FF6B6B}
+  .tbtn{flex:none;width:34px;height:34px;border-radius:9px;border:1px solid rgba(255,255,255,.14);
+        background:transparent;font-size:16px;line-height:1}
+  .tgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .tcard{border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:11px 10px;cursor:pointer;
+         text-align:left;color:var(--ink);background:rgba(255,255,255,.04)}
+  .tcard.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+  .tcard b{display:block;font-size:13px;margin-top:5px}
+  .tcard span{font-size:10px;opacity:.65}
+  .tcard .sw{display:flex;gap:3px;margin-top:6px}
+  .tcard .sw i{width:14px;height:8px;border-radius:3px;display:block}
+  .marks{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+  .marks span{position:absolute;opacity:.07;font-size:34px}
+  main{position:relative;z-index:1}
   .back{flex:none;width:34px;height:34px;border-radius:9px;border:1px solid rgba(255,255,255,.14);
         background:transparent;color:#c9cde6;font-size:15px}
 </style>
 </head>
 <body>
 <header>
+  <div id="deco"></div>
   <div class="hrow" id="hrow"></div>
   <div class="sync" id="sync">接続中…</div>
 </header>
+<div class="marks" id="marks"></div>
 <main id="main"></main>
 <div id="modalRoot"></div>
 
@@ -118,7 +140,7 @@ var sync = document.getElementById("sync");
 function say(m, ok){ sync.textContent = m; sync.className = "sync" + (ok ? " ok" : ""); }
 
 var TRIP = new URLSearchParams(location.search).get("id") || "";
-var state = { title:"", dates:"", start:"", end:"", stay:"", packing:"", memo:"", days:[] };
+var state = { title:"", dates:"", start:"", end:"", theme:"", stay:"", packing:"", memo:"", days:[] };
 var trips = null;        /* 一覧。null は読み込み中 */
 var applying = false;    /* 描画中の input イベントを保存に流さない */
 var ref = null;
@@ -131,6 +153,111 @@ function setVal(el, v){
   if (document.activeElement === el) return;
   if (el.value !== (v || "")) el.value = v || "";
 }
+
+/* ─────────── テーマ ───────────
+   作品の世界観を、色・モチーフ・自作の図形で表す。
+   ★既存の画像素材は一切使っていない★
+   公開リポジトリに他者の著作物を置くことになるため、
+   キャラクター画像や公式ロゴは取り込まず、配色と形だけで寄せている。
+
+   各テーマ: bg（背景）/ card / accent（差し色）/ ink（文字）/ 絵文字 /
+             deco（ヘッダーに敷く自作SVG）
+*/
+var THEMES = {
+  none: { label:"標準", icon:"🧳", series:"", works:{} },
+
+  ghibli: {
+    label:"ジブリ", icon:"🌿", series:"ジブリ",
+    works:{
+      totoro:{ label:"となりのトトロ", icon:"🌳",
+        bg:"linear-gradient(180deg,#13291d 0%,#0d1a13 100%)", card:"rgba(146,206,122,.09)",
+        accent:"#8FD14F", ink:"#eaf6e2", sub:"#9ec59a",
+        marks:["🌳","🌧️","🐈","🌰","🍃"],
+        deco:'<svg viewBox="0 0 400 60" preserveAspectRatio="none"><path d="M0,60 Q40,20 80,60 Q120,10 160,60 Q200,25 240,60 Q280,5 320,60 Q360,30 400,60 Z" fill="%2300000022"/><circle cx="330" cy="18" r="9" fill="%23F6E58D"/></svg>' },
+      laputa:{ label:"天空の城ラピュタ", icon:"☁️",
+        bg:"linear-gradient(180deg,#0e1c33 0%,#122a45 60%,#0b1524 100%)", card:"rgba(130,177,255,.09)",
+        accent:"#7FB2F0", ink:"#e6f0ff", sub:"#93a9c9",
+        marks:["☁️","⚙️","🕊️","💎","🏰"],
+        deco:'<svg viewBox="0 0 400 60" preserveAspectRatio="none"><ellipse cx="90" cy="40" rx="70" ry="16" fill="%23ffffff18"/><ellipse cx="250" cy="26" rx="95" ry="18" fill="%23ffffff12"/><circle cx="345" cy="20" r="7" fill="%23cfe3ff55"/></svg>' },
+      mononoke:{ label:"もののけ姫", icon:"🐗",
+        bg:"linear-gradient(180deg,#141f18 0%,#1d1414 100%)", card:"rgba(214,167,106,.08)",
+        accent:"#C8A046", ink:"#f0e8da", sub:"#b5a78e",
+        marks:["🐗","🏹","🦌","🌲","🔥"],
+        deco:'<svg viewBox="0 0 400 60" preserveAspectRatio="none"><path d="M0,60 L40,14 L80,60 L120,22 L160,60 L200,10 L240,60 L280,24 L320,60 L360,18 L400,60 Z" fill="%2300000030"/></svg>' },
+      kiki:{ label:"魔女の宅急便", icon:"🧹",
+        bg:"linear-gradient(180deg,#1b1230 0%,#2a1a3d 100%)", card:"rgba(255,140,170,.09)",
+        accent:"#FF8FA3", ink:"#fdeef2", sub:"#c9a8bd",
+        marks:["🧹","🐈‍⬛","🥖","📻","🌙"],
+        deco:'<svg viewBox="0 0 400 60" preserveAspectRatio="none"><circle cx="340" cy="18" r="11" fill="%23FFE29A"/><path d="M0,60 L60,42 L120,55 L180,38 L240,52 L300,40 L400,58 L400,60 Z" fill="%2300000030"/></svg>' }
+    }
+  },
+
+  conan: {
+    label:"名探偵コナン", icon:"🔍", series:"名探偵コナン",
+    works:{
+      conan:{ label:"江戸川コナン", icon:"🕶️",
+        bg:"linear-gradient(180deg,#0b1430 0%,#111a3a 100%)", card:"rgba(90,130,255,.1)",
+        accent:"#4D7CFF", ink:"#e8eeff", sub:"#93a3cc",
+        marks:["🔍","🕶️","⚽","🎀","📖"],
+        deco:'<svg viewBox="0 0 400 60" preserveAspectRatio="none"><circle cx="60" cy="30" r="20" fill="none" stroke="%234D7CFF55" stroke-width="4"/><line x1="75" y1="45" x2="105" y2="60" stroke="%234D7CFF55" stroke-width="5"/><path d="M200,60 L400,60 L400,50 L200,58 Z" fill="%23ffffff10"/></svg>' },
+      kid:{ label:"怪盗キッド", icon:"🎩",
+        bg:"linear-gradient(180deg,#141426 0%,#20203a 100%)", card:"rgba(255,255,255,.08)",
+        accent:"#E8E3FF", ink:"#f4f2ff", sub:"#a9a4c6",
+        marks:["🎩","🃏","🕊️","💎","🌙"],
+        deco:'<svg viewBox="0 0 400 60" preserveAspectRatio="none"><path d="M150,55 L150,30 Q150,18 175,18 Q200,18 200,30 L200,55 Z" fill="%23ffffff22"/><rect x="138" y="52" width="74" height="7" rx="3" fill="%23ffffff22"/><circle cx="330" cy="20" r="8" fill="%23E8E3FF33"/></svg>' },
+      heiji:{ label:"服部平次", icon:"🗡️",
+        bg:"linear-gradient(180deg,#2a1206 0%,#3a1a09 100%)", card:"rgba(255,160,80,.1)",
+        accent:"#FF9F45", ink:"#fff0e0", sub:"#d0a986",
+        marks:["🗡️","🏯","🔎","🍢","🌇"],
+        deco:'<svg viewBox="0 0 400 60" preserveAspectRatio="none"><path d="M0,60 L0,40 L40,40 L40,28 L80,28 L80,44 L120,44 L120,34 L160,34 L160,60 Z" fill="%2300000035"/><circle cx="340" cy="22" r="12" fill="%23FF9F4533"/></svg>' }
+    }
+  },
+
+  disney: {
+    label:"ディズニー", icon:"🏰", series:"ディズニー",
+    works:{
+      castle:{ label:"シンデレラ城", icon:"🏰",
+        bg:"linear-gradient(180deg,#1a1147 0%,#2b1a6b 55%,#120c33 100%)", card:"rgba(180,160,255,.1)",
+        accent:"#B79CFF", ink:"#f2eeff", sub:"#b3a8d8",
+        marks:["🏰","✨","🎆","👑","🕛"],
+        deco:'<svg viewBox="0 0 400 60" preserveAspectRatio="none"><path d="M170,60 L170,30 L180,14 L190,30 L190,60 Z M200,60 L200,22 L212,4 L224,22 L224,60 Z M234,60 L234,30 L244,14 L254,30 L254,60 Z" fill="%23ffffff20"/><circle cx="70" cy="18" r="3" fill="%23fff59d"/><circle cx="110" cy="32" r="2" fill="%23fff59d"/><circle cx="320" cy="16" r="3" fill="%23fff59d"/></svg>' },
+      mickey:{ label:"ミッキー＆フレンズ", icon:"🐭",
+        bg:"linear-gradient(180deg,#2a0d12 0%,#3d1218 100%)", card:"rgba(255,90,110,.1)",
+        accent:"#FF5A6E", ink:"#fff0f1", sub:"#d3a3a8",
+        marks:["🐭","🎈","🎀","🧤","🍭"],
+        deco:'<svg viewBox="0 0 400 60" preserveAspectRatio="none"><circle cx="200" cy="42" r="22" fill="%23ffffff18"/><circle cx="174" cy="18" r="13" fill="%23ffffff18"/><circle cx="226" cy="18" r="13" fill="%23ffffff18"/></svg>' },
+      frozen:{ label:"アナと雪の女王", icon:"❄️",
+        bg:"linear-gradient(180deg,#07283f 0%,#0d3a58 60%,#061d2e 100%)", card:"rgba(140,220,255,.1)",
+        accent:"#7FD8FF", ink:"#e8f8ff", sub:"#9dc2d6",
+        marks:["❄️","⛄","🏔️","💠","🦌"],
+        deco:'<svg viewBox="0 0 400 60" preserveAspectRatio="none"><path d="M0,60 L60,26 L110,60 Z M120,60 L200,14 L280,60 Z M290,60 L350,30 L400,60 Z" fill="%23ffffff1a"/><circle cx="60" cy="16" r="2" fill="%23ffffff88"/><circle cx="300" cy="20" r="2" fill="%23ffffff88"/></svg>' }
+    }
+  }
+};
+
+/* 選んだテーマを画面に反映する。CSS 変数だけを差し替えるので、
+   個々の要素の指定は触らずに済む。 */
+function applyTheme(t){
+  var w = themeOf(t);
+  var r = document.documentElement.style;
+  r.setProperty("--bg", w.bg || "linear-gradient(180deg,#0f1020,#0f1020)");
+  r.setProperty("--card", w.card || "rgba(255,255,255,.04)");
+  r.setProperty("--accent", w.accent || "#7c6cf0");
+  r.setProperty("--ink", w.ink || "#e9e9f0");
+  r.setProperty("--sub", w.sub || "#8087a8");
+  var d = document.getElementById("deco");
+  if (d) d.innerHTML = w.deco ? decodeURIComponent(w.deco.replace(/%23/g, "#")) : "";
+}
+/* theme は "series/work" の形で持つ。未設定・不明なら標準。 */
+function themeOf(t){
+  var p = String(t || "").split("/");
+  var s = THEMES[p[0]];
+  if (!s || !s.works || !s.works[p[1]]) return { icon:"🧳", label:"標準", marks:[] };
+  var w = s.works[p[1]];
+  return Object.assign({ series:s.label }, w);
+}
+function themeIcon(t){ return themeOf(t).icon || "🧳"; }
+
 /* 日付は YYYY-MM-DD で持つ。new Date("2026-09-22") は UTC 解釈になって
    時差の分だけ前日にずれるので、必ず数値に割って地方時で組み立てる。 */
 var WD = ["日","月","火","水","木","金","土"];
@@ -213,9 +340,10 @@ function showList(){
       var days = (t.days || []).filter(Boolean);
       var n = days.reduce(function(a,d){ return a + ((d.items||[]).filter(Boolean).length); }, 0);
       return '<div class="trip" data-id="' + esc(k) + '">' +
-        '<div style="font-size:20px">🗺️</div>' +
+        '<div style="font-size:20px">' + themeIcon(t.theme) + '</div>' +
         '<div class="n"><b>' + esc(t.title || "(名前なし)") + '</b>' +
-        '<span>' + esc(t.dates || "日程未定") + ' ・ ' + days.length + '日 / 予定' + n + '件</span></div>' +
+        '<span>' + esc(t.dates || "日程未定") + ' ・ ' + days.length + '日 / 予定' + n + '件' +
+        (t.theme ? ' ・ ' + esc(themeOf(t.theme).label) : "") + '</span></div>' +
         '<div style="color:#5d6484">›</div></div>';
     }).join("") +
     (keys.length ? "" : '<p style="color:#7f86a8;text-align:center;padding:30px 0">まだ旅がありません</p>') +
@@ -230,7 +358,7 @@ function showList(){
     if (name === null) return;
     /* キーは時刻から作る。日本語をキーにすると Firebase のパスで扱いづらい。 */
     var id = "t" + Date.now();
-    db.ref("trip/" + id).set({ title:name || "", dates:"", start:"", end:"", stay:"", packing:"", memo:"", days:[] })
+    db.ref("trip/" + id).set({ title:name || "", dates:"", start:"", end:"", theme:"", stay:"", packing:"", memo:"", days:[] })
       .then(function(){ location.search = "?id=" + id; })
       .catch(function(e){ say("作成できませんでした: " + e.message); });
   });
@@ -246,8 +374,10 @@ var FIELDS = ["title","stay","packing","memo"];
 function showTrip(){
   document.getElementById("hrow").innerHTML =
     '<button class="back" id="back" title="旅の一覧へ">‹</button>' +
-    '<h1>🧳 <input id="title" placeholder="旅の名前"></h1>';
+    '<h1><span id="tripIcon">🧳</span> <input id="title" placeholder="旅の名前"></h1>' +
+    '<button class="tbtn" id="themeBtn" title="テーマを選ぶ">🎨</button>';
   document.getElementById("back").addEventListener("click", function(){ location.search = ""; });
+  document.getElementById("themeBtn").addEventListener("click", openThemePicker);
 
   document.getElementById("main").innerHTML =
     '<div class="sec"><label>📅 日程</label>' +
@@ -291,6 +421,10 @@ function showTrip(){
 function render(){
   if (!TRIP) { showList(); return; }
   applying = true;
+  applyTheme(state.theme);
+  var ic = document.getElementById("tripIcon");
+  if (ic) ic.textContent = themeIcon(state.theme);
+  paintMarks(state.theme);
   FIELDS.forEach(function(k){ setVal(document.getElementById(k), state[k]); });
   setVal(document.getElementById("start"), state.start);
   setVal(document.getElementById("end"), state.end);
@@ -457,6 +591,74 @@ function renderOnlyRow(di, ii){
   renderItems(wrap.children[di].querySelector(".items"), di, state.days[di].items);
 }
 
+/* ─────────── テーマの選択 ─────────── */
+
+/* 背景にモチーフを薄く散らす。画像を使わず絵文字を置くだけなので
+   素材の持ち込みが要らず、テーマごとの雰囲気だけを足せる。 */
+function paintMarks(t){
+  var box = document.getElementById("marks");
+  if (!box) return;
+  var marks = themeOf(t).marks || [];
+  if (!marks.length){ box.innerHTML = ""; return; }
+  var html = "";
+  for (var i = 0; i < 14; i++){
+    var m = marks[i % marks.length];
+    /* 位置は決め打ちにする。乱数だと描き直すたびに動いて落ち着かない。 */
+    var top = (i * 37 % 92) + 3, left = (i * 61 % 90) + 3, rot = (i * 47 % 40) - 20;
+    html += '<span style="top:' + top + '%;left:' + left + '%;transform:rotate(' + rot + 'deg)">' + m + '</span>';
+  }
+  box.innerHTML = html;
+}
+
+function openThemePicker(){
+  var cur = state.theme || "";
+  var body = "";
+  Object.keys(THEMES).forEach(function(sk){
+    var series = THEMES[sk];
+    if (!series.works || !Object.keys(series.works).length) return;
+    body += '<div class="sec"><label>' + series.icon + ' ' + esc(series.label) + '</label><div class="tgrid">';
+    Object.keys(series.works).forEach(function(wk){
+      var w = series.works[wk], key = sk + "/" + wk;
+      body += '<button class="tcard' + (cur === key ? " on" : "") + '" data-k="' + key + '">' +
+why(w) + '<b>' + esc(w.label) + '</b><span>' + esc(series.label) + '</span></button>';
+    });
+    body += '</div></div>';
+  });
+  function why(w){
+    return '<div style="font-size:22px">' + w.icon + '</div>' +
+      '<div class="sw"><i style="background:' + w.accent + '"></i>' +
+      '<i style="background:' + w.card.replace(/[\d.]+\)$/, "1)") + '"></i>' +
+      '<i style="background:' + w.ink + '"></i></div>';
+  }
+
+  document.getElementById("modalRoot").innerHTML =
+    '<div class="mask" id="tmask"><div class="modal">' +
+      '<h2>🎨 テーマを選ぶ</h2>' +
+      '<div class="sec"><label>標準</label><div class="tgrid">' +
+        '<button class="tcard' + (cur ? "" : " on") + '" data-k="">' +
+        '<div style="font-size:22px">🧳</div><b>標準</b><span>飾りなし</span></button>' +
+      '</div></div>' +
+      body +
+      '<div class="btns"><button class="pri" id="tclose">閉じる</button></div>' +
+    '</div></div>';
+
+  Array.prototype.forEach.call(document.querySelectorAll(".tcard"), function(el){
+    el.addEventListener("click", function(){
+      state.theme = el.dataset.k;
+      save(); render();
+      /* 選んだ結果をその場で見せたいので、開いたまま印だけ付け替える。 */
+      Array.prototype.forEach.call(document.querySelectorAll(".tcard"), function(o){
+        o.classList.toggle("on", o.dataset.k === state.theme);
+      });
+    });
+  });
+  document.getElementById("tclose").addEventListener("click", closeTheme);
+  document.getElementById("tmask").addEventListener("click", function(e){
+    if (e.target.id === "tmask") closeTheme();
+  });
+}
+function closeTheme(){ document.getElementById("modalRoot").innerHTML = ""; }
+
 /* ─────────── 保存と同期 ─────────── */
 
 var timer = null;
@@ -475,10 +677,10 @@ function save(){
    モーダルを開いている間に順序が変わると、掴んでいる行の位置（ii）が
    ずれて別の予定を書き換えてしまう。編集中は届いた順のまま保持する。 */
 function normalize(v, sort){
-  var s = { title:"", dates:"", start:"", end:"", stay:"", packing:"", memo:"", days:[] };
+  var s = { title:"", dates:"", start:"", end:"", theme:"", stay:"", packing:"", memo:"", days:[] };
   if (!v) return s;
   FIELDS.forEach(function(k){ s[k] = v[k] || ""; });
-  s.start = v.start || ""; s.end = v.end || ""; s.dates = v.dates || "";
+  s.start = v.start || ""; s.end = v.end || ""; s.dates = v.dates || ""; s.theme = v.theme || "";
   /* Firebase は空配列を落とすので、無ければ空配列に戻す。 */
   s.days = (v.days || []).filter(Boolean).map(function(d){
     var items = (d.items || []).filter(Boolean).map(function(it){
