@@ -56,12 +56,9 @@
 
   /* ── 予定の行 ── */
   .item{display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.05);
-        border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:8px 6px 8px 4px;margin-bottom:6px;
-        touch-action:pan-y}
-  .item.drag{opacity:.45;border-color:#7c6cf0}
-  .item.over{border-color:#7c6cf0;background:rgba(124,108,240,.12)}
-  .grip{flex:none;width:28px;text-align:center;color:#5d6484;font-size:15px;cursor:grab;
-        touch-action:none;user-select:none;-webkit-user-select:none}
+        border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:8px 6px 8px 8px;margin-bottom:6px}
+    .no{flex:none;width:24px;text-align:center;color:#4e5470;font-size:11px;font-weight:700;
+      font-variant-numeric:tabular-nums}
   .body{flex:1;min-width:0;cursor:pointer;padding:2px 0}
   .t{color:#b9b0ff;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
   .w{font-size:14px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -133,6 +130,31 @@ function setVal(el, v){
   if (document.activeElement === el) return;
   if (el.value !== (v || "")) el.value = v || "";
 }
+/* 時刻は "7:30" のように保存されていることがある（自由入力だった頃の名残）。
+   input type=time は "HH:MM" しか受け付けないので、読み込み時にゼロ埋めする。
+   これをしないとモーダルの時刻欄が空に見える。 */
+function padTime(v){
+  var m = String(v == null ? "" : v).trim().match(/^(\d{1,2})[:：](\d{1,2})$/);
+  if (!m) return "";
+  var h = Math.min(23, Number(m[1])), mi = Math.min(59, Number(m[2]));
+  return ("0" + h).slice(-2) + ":" + ("0" + mi).slice(-2);
+}
+/* 並び順は時刻だけで決める。手で並べ替えられるようにもしていたが、
+   時刻を直すたびに手の順序と食い違って混乱するので、時刻を唯一の根拠にした。
+   時刻未定は末尾。同じ時刻は元の並びを保つ（安定ソート）。 */
+function sortItems(items){
+  return items
+    .map(function(it, i){ return { it:it, i:i, t:padTime(it.time) }; })
+    .sort(function(a, b){
+      if (!a.t && !b.t) return a.i - b.i;
+      if (!a.t) return 1;
+      if (!b.t) return -1;
+      if (a.t !== b.t) return a.t < b.t ? -1 : 1;
+      return a.i - b.i;
+    })
+    .map(function(x){ return x.it; });
+}
+
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
 
@@ -234,6 +256,7 @@ function render(){
         state.days.splice(di,1); save(); render();
       });
       box.querySelector(".add").addEventListener("click", function(){
+        /* 時刻が空の予定は末尾に並ぶので、そのまま最後の index を開けばよい。 */
         state.days[di].items.push({ time:"", what:"" }); save(); render();
         openModal(di, state.days[di].items.length - 1);
       });
@@ -256,7 +279,7 @@ function renderItems(list, di, items){
     if (it.url)   tags.push("🔗リンク");
     if (it.memo)  tags.push("📝メモ");
     row.innerHTML =
-      '<div class="grip" title="ドラッグで並び替え">⠿</div>' +
+      '<div class="no">' + (ii + 1) + '</div>' +
       '<div class="body">' +
         '<div class="t">' + (it.time ? esc(it.time) : "時刻未定") + '</div>' +
         '<div class="w' + (it.what ? "" : " empty") + '">' + esc(it.what || "（内容なし・タップで編集）") + '</div>' +
@@ -268,57 +291,7 @@ function renderItems(list, di, items){
       e.stopPropagation();
       state.days[di].items.splice(ii,1); save(); render();
     });
-    attachDrag(row.querySelector(".grip"), row, di);
     list.appendChild(row);
-  });
-}
-
-/* ─────────── 並び替え ───────────
-   HTML5 の drag&drop はスマホで動かないので Pointer Events で実装する。
-   つまみ（⠿）を押している間だけ動かし、指の位置に応じて入れ替える。
-   入れ替えは state を直接動かして描画し直す。 */
-function attachDrag(grip, row, di){
-  grip.addEventListener("pointerdown", function(ev){
-    ev.preventDefault();
-    var list = row.parentNode;
-    var from = Number(row.dataset.ii);
-    grip.setPointerCapture(ev.pointerId);
-    row.classList.add("drag");
-
-    function move(e){
-      var rows = Array.prototype.slice.call(list.children);
-      var cur = Number(row.dataset.ii);
-      var to = cur;
-      for (var i = 0; i < rows.length; i++){
-        var r = rows[i].getBoundingClientRect();
-        if (e.clientY < r.top + r.height / 2){ to = i; break; }
-        to = i;
-      }
-      if (to !== cur){
-        var arr = state.days[di].items;
-        arr.splice(to, 0, arr.splice(cur, 1)[0]);
-        renderItems(list, di, arr);
-        /* 作り直したので、掴んでいる行を取り直して掴み直す */
-        var next = list.children[to];
-        next.classList.add("drag");
-        var g = next.querySelector(".grip");
-        g.setPointerCapture(ev.pointerId);
-        g.addEventListener("pointermove", move);
-        g.addEventListener("pointerup", up);
-        grip.removeEventListener("pointermove", move);
-        grip.removeEventListener("pointerup", up);
-        grip = g; row = next;
-      }
-    }
-    function up(){
-      row.classList.remove("drag");
-      grip.removeEventListener("pointermove", move);
-      grip.removeEventListener("pointerup", up);
-      if (Number(row.dataset.ii) !== from) save();
-      render();
-    }
-    grip.addEventListener("pointermove", move);
-    grip.addEventListener("pointerup", up);
   });
 }
 
@@ -382,7 +355,22 @@ function showLink(url){
     ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" ' +
       'style="color:#82B1FF;font-size:12px;text-decoration:none">🔗 開く</a>' : "";
 }
-function closeModal(){ openItem = null; document.getElementById("modalRoot").innerHTML = ""; }
+/* 閉じるときに時刻順へ並べ替える。
+   編集の途中で並べ替えると、掴んでいる行の位置（ii）がずれて
+   別の予定を書き換えてしまう。だから「登録＝閉じる」の瞬間だけ行う。 */
+function closeModal(){
+  var di = openItem ? openItem.di : -1;
+  openItem = null;
+  document.getElementById("modalRoot").innerHTML = "";
+  if (di >= 0 && state.days[di]){
+    state.days[di].items = sortItems(state.days[di].items);
+    /* 無条件に保存する。「順序が変わったか」で判定すると、受信側で
+       既に並べ替え済みになっている場合に保存が走らず、DB の順序だけが
+       古いまま残る（実際にそうなった）。 */
+    save();
+    render();
+  }
+}
 
 /* モーダルで打っている間に全体を render すると入力欄が作り直されて
    カーソルが飛ぶ。一覧側はその行の表示だけ更新する。 */
@@ -406,13 +394,19 @@ function save(){
   }, 400);
 }
 
-function normalize(v){
+/* sort=false のときは並べ替えない。
+   モーダルを開いている間に順序が変わると、掴んでいる行の位置（ii）が
+   ずれて別の予定を書き換えてしまう。編集中は届いた順のまま保持する。 */
+function normalize(v, sort){
   var s = { title:"", dates:"", stay:"", packing:"", memo:"", days:[] };
   if (!v) return s;
   FIELDS.forEach(function(k){ s[k] = v[k] || ""; });
   /* Firebase は空配列を落とすので、無ければ空配列に戻す。 */
   s.days = (v.days || []).filter(Boolean).map(function(d){
-    return { label: d.label || "", items: (d.items || []).filter(Boolean) };
+    var items = (d.items || []).filter(Boolean).map(function(it){
+      return Object.assign({}, it, { time: padTime(it.time) });
+    });
+    return { label: d.label || "", items: sort === false ? items : sortItems(items) };
   });
   return s;
 }
@@ -421,7 +415,7 @@ if (TRIP){
   showTrip();
   ref = db.ref("trip/" + TRIP);
   ref.on("value", function(snap){
-    state = normalize(snap.val());
+    state = normalize(snap.val(), !openItem);
     render();
     say("接続中 ✓", true);
   }, function(e){ say("読み込めませんでした: " + e.message); });
