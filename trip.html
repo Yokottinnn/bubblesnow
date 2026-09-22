@@ -52,6 +52,7 @@
           color:#b9b0ff;border-radius:13px;font-size:14px;font-weight:600;margin-bottom:12px}
   .sec{margin-bottom:12px}
   .sec label{display:block;font-size:11px;color:#8087a8;font-weight:700;letter-spacing:1px;margin-bottom:5px}
+  .note{font-size:11px;color:#8087a8;margin-top:5px;min-height:14px}
   .foot{text-align:center;color:#565c7a;font-size:11px;padding:8px 0 4px;line-height:1.8}
 
   /* ── 予定の行 ── */
@@ -117,7 +118,7 @@ var sync = document.getElementById("sync");
 function say(m, ok){ sync.textContent = m; sync.className = "sync" + (ok ? " ok" : ""); }
 
 var TRIP = new URLSearchParams(location.search).get("id") || "";
-var state = { title:"", dates:"", stay:"", packing:"", memo:"", days:[] };
+var state = { title:"", dates:"", start:"", end:"", stay:"", packing:"", memo:"", days:[] };
 var trips = null;        /* 一覧。null は読み込み中 */
 var applying = false;    /* 描画中の input イベントを保存に流さない */
 var ref = null;
@@ -130,6 +131,46 @@ function setVal(el, v){
   if (document.activeElement === el) return;
   if (el.value !== (v || "")) el.value = v || "";
 }
+/* 日付は YYYY-MM-DD で持つ。new Date("2026-09-22") は UTC 解釈になって
+   時差の分だけ前日にずれるので、必ず数値に割って地方時で組み立てる。 */
+var WD = ["日","月","火","水","木","金","土"];
+function parseDate(v){
+  var m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return isNaN(d.getTime()) ? null : d;
+}
+function fmtDate(v){
+  var d = parseDate(v);
+  return d ? (d.getMonth() + 1) + "/" + d.getDate() + "(" + WD[d.getDay()] + ")" : "";
+}
+/* 一覧や見出しに出す表記を作る。片方だけでも出す。 */
+function fmtRange(start, end){
+  var a = fmtDate(start), b = fmtDate(end);
+  if (a && b) return a === b ? a : a + " 〜 " + b;
+  return a || b || "";
+}
+/* 開始日から n 日目の日付。日程の見出しを自動で埋めるのに使う。 */
+function addDays(v, n){
+  var d = parseDate(v);
+  if (!d) return null;
+  d.setDate(d.getDate() + n);
+  return d;
+}
+/* 「2泊3日」の表記。日付を入れた実感が出るので添える。 */
+function nights(start, end){
+  var a = parseDate(start), b = parseDate(end);
+  if (!a || !b) return "";
+  var n = Math.round((b - a) / 86400000);
+  if (n < 0) return "";
+  return n === 0 ? "日帰り" : n + "泊" + (n + 1) + "日";
+}
+function dayLabel(start, i){
+  var d = addDays(start, i);
+  if (!d) return "";
+  return (i + 1) + "日目 " + (d.getMonth() + 1) + "/" + d.getDate() + "(" + WD[d.getDay()] + ")";
+}
+
 /* 時刻は "7:30" のように保存されていることがある（自由入力だった頃の名残）。
    input type=time は "HH:MM" しか受け付けないので、読み込み時にゼロ埋めする。
    これをしないとモーダルの時刻欄が空に見える。 */
@@ -189,7 +230,7 @@ function showList(){
     if (name === null) return;
     /* キーは時刻から作る。日本語をキーにすると Firebase のパスで扱いづらい。 */
     var id = "t" + Date.now();
-    db.ref("trip/" + id).set({ title:name || "", dates:"", stay:"", packing:"", memo:"", days:[] })
+    db.ref("trip/" + id).set({ title:name || "", dates:"", start:"", end:"", stay:"", packing:"", memo:"", days:[] })
       .then(function(){ location.search = "?id=" + id; })
       .catch(function(e){ say("作成できませんでした: " + e.message); });
   });
@@ -197,7 +238,10 @@ function showList(){
 
 /* ─────────── しおり本体 ─────────── */
 
-var FIELDS = ["title","dates","stay","packing","memo"];
+/* dates は start/end から組み立てるので、ここには入れない。
+   日付を入れる前の古いデータでは自由入力の文字列が入っているので、
+   その場合は消さずにそのまま表示する。 */
+var FIELDS = ["title","stay","packing","memo"];
 
 function showTrip(){
   document.getElementById("hrow").innerHTML =
@@ -206,7 +250,9 @@ function showTrip(){
   document.getElementById("back").addEventListener("click", function(){ location.search = ""; });
 
   document.getElementById("main").innerHTML =
-    '<div class="sec"><label>📅 日程</label><input id="dates" placeholder="例: 11/22(土) 〜 11/24(月)"></div>' +
+    '<div class="sec"><label>📅 日程</label>' +
+      '<div class="row2"><input type="date" id="start"><input type="date" id="end"></div>' +
+      '<div id="rangeNote" class="note"></div></div>' +
     '<div class="sec"><label>🏨 宿・交通</label><textarea id="stay" placeholder="宿の名前、住所、チェックイン時刻&#10;飛行機・新幹線の便名や座席"></textarea></div>' +
     '<div id="days"></div>' +
     '<button class="addday" id="addday">＋ 日程を追加</button>' +
@@ -220,8 +266,25 @@ function showTrip(){
       state[k] = e.target.value; save();
     });
   });
+  ["start","end"].forEach(function(k){
+    document.getElementById(k).addEventListener("change", function(e){
+      if (applying) return;
+      state[k] = e.target.value;
+      /* 終わりが始まりより前になったら、始まりに合わせる。
+         逆順のまま保存すると一覧の表記が意味を成さない。 */
+      if (state.start && state.end && state.end < state.start){
+        if (k === "start") state.end = state.start; else state.start = state.end;
+      }
+      /* 一覧や見出しに出す表記は日付から作り直す。 */
+      if (state.start || state.end) state.dates = fmtRange(state.start, state.end);
+      save(); render();
+    });
+  });
   document.getElementById("addday").addEventListener("click", function(){
-    state.days.push({ label:"", items:[] }); save(); render();
+    /* 開始日が分かっていれば「2日目 9/22(火)」まで埋める。
+       手で直せるよう、あくまで初期値として入れるだけ。 */
+    state.days.push({ label: dayLabel(state.start, state.days.length), items:[] });
+    save(); render();
   });
 }
 
@@ -229,6 +292,20 @@ function render(){
   if (!TRIP) { showList(); return; }
   applying = true;
   FIELDS.forEach(function(k){ setVal(document.getElementById(k), state[k]); });
+  setVal(document.getElementById("start"), state.start);
+  setVal(document.getElementById("end"), state.end);
+  var note = document.getElementById("rangeNote");
+  if (note){
+    if (state.start || state.end){
+      var d = nights(state.start, state.end);
+      note.textContent = fmtRange(state.start, state.end) + (d ? "（" + d + "）" : "");
+    } else if (state.dates){
+      /* 日付を入れる前の自由入力。消さずに残して、置き換えを促す。 */
+      note.textContent = "現在の表記: " + state.dates + "（日付を選ぶと置き換わります）";
+    } else {
+      note.textContent = "";
+    }
+  }
 
   var wrap = document.getElementById("days");
   if (!wrap) { applying = false; return; }
@@ -398,9 +475,10 @@ function save(){
    モーダルを開いている間に順序が変わると、掴んでいる行の位置（ii）が
    ずれて別の予定を書き換えてしまう。編集中は届いた順のまま保持する。 */
 function normalize(v, sort){
-  var s = { title:"", dates:"", stay:"", packing:"", memo:"", days:[] };
+  var s = { title:"", dates:"", start:"", end:"", stay:"", packing:"", memo:"", days:[] };
   if (!v) return s;
   FIELDS.forEach(function(k){ s[k] = v[k] || ""; });
+  s.start = v.start || ""; s.end = v.end || ""; s.dates = v.dates || "";
   /* Firebase は空配列を落とすので、無ければ空配列に戻す。 */
   s.days = (v.days || []).filter(Boolean).map(function(d){
     var items = (d.items || []).filter(Boolean).map(function(it){
