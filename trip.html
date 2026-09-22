@@ -14,18 +14,22 @@
   users/yokota（タスク・おすすめ）は従来どおり UID 限定のまま。
   URL が漏れれば第三者に書き換えられるので、旅程以上の情報は置かないこと。
 
-  ★同時編集★
-  Realtime Database の on('value') で双方向に同期する。
-  入力中のフィールドだけは上書きしない（打っている途中で他方の保存が
-  届くと文字が消えるため）。
+  ★データの形（後方互換）★
+  /trip/<tripId> = { title, dates, stay, packing, memo, days:[{label, items:[...]}] }
+  旅の一覧はこの直下のキーを読んで作る。最初に作った "default"（那須白河）も
+  そのまま一覧に並ぶので、移行作業は要らない。
+  予定の項目は { time, what } が最小形で、詳細（場所・メモ・URL・費用）は
+  後から足した任意フィールド。無ければ空として扱う。
 -->
 <style>
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
-       background:#0f1020;color:#e9e9f0;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+       background:#0f1020;color:#e9e9f0;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+       -webkit-text-size-adjust:100%}
   header{position:sticky;top:0;z-index:10;background:rgba(15,16,32,.94);backdrop-filter:blur(8px);
-         padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.08)}
-  h1{margin:0;font-size:19px;display:flex;align-items:center;gap:8px}
+         padding:12px 14px 9px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .hrow{display:flex;align-items:center;gap:8px}
+  h1{margin:0;font-size:18px;display:flex;align-items:center;gap:8px;flex:1;min-width:0}
   h1 input{flex:1;min-width:0}
   .sync{font-size:11px;color:#7f86a8;margin-top:4px;height:14px}
   .sync.ok{color:#51CF66}
@@ -34,15 +38,12 @@
        border-radius:14px;padding:12px 13px;margin-bottom:12px}
   .dayhead{display:flex;gap:8px;align-items:center;margin-bottom:8px}
   .dayhead input{font-weight:700;font-size:15px}
-  input,textarea{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+  input,textarea,select{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
        border-radius:9px;color:#e9e9f0;padding:9px 11px;font-size:15px;font-family:inherit;width:100%}
-  input:focus,textarea:focus{outline:none;border-color:#7c6cf0;background:rgba(255,255,255,.09)}
+  input:focus,textarea:focus,select:focus{outline:none;border-color:#7c6cf0;background:rgba(255,255,255,.09)}
   textarea{resize:vertical;min-height:64px;line-height:1.6}
-  .item{display:flex;gap:8px;align-items:flex-start;margin-bottom:7px}
-  .item .time{width:76px;flex:none;text-align:center}
-  .item .what{flex:1;min-width:0}
   button{font-family:inherit;cursor:pointer}
-  .x{flex:none;width:34px;height:38px;border:none;background:transparent;color:#5d6484;font-size:17px;border-radius:8px}
+  .x{flex:none;width:34px;height:36px;border:none;background:transparent;color:#5d6484;font-size:16px;border-radius:8px}
   .x:hover{background:rgba(255,107,107,.14);color:#FF6B6B}
   .add{width:100%;padding:9px;border:1px dashed rgba(255,255,255,.18);background:transparent;
        color:#9aa0c0;border-radius:9px;font-size:13px;margin-top:3px}
@@ -52,41 +53,55 @@
   .sec{margin-bottom:12px}
   .sec label{display:block;font-size:11px;color:#8087a8;font-weight:700;letter-spacing:1px;margin-bottom:5px}
   .foot{text-align:center;color:#565c7a;font-size:11px;padding:8px 0 4px;line-height:1.8}
+
+  /* ── 予定の行 ── */
+  .item{display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.05);
+        border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:8px 6px 8px 4px;margin-bottom:6px;
+        touch-action:pan-y}
+  .item.drag{opacity:.45;border-color:#7c6cf0}
+  .item.over{border-color:#7c6cf0;background:rgba(124,108,240,.12)}
+  .grip{flex:none;width:28px;text-align:center;color:#5d6484;font-size:15px;cursor:grab;
+        touch-action:none;user-select:none;-webkit-user-select:none}
+  .body{flex:1;min-width:0;cursor:pointer;padding:2px 0}
+  .t{color:#b9b0ff;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+  .w{font-size:14px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .w.empty{color:#5d6484}
+  .tags{font-size:10px;color:#7f86a8;margin-top:2px;display:flex;gap:7px;flex-wrap:wrap}
+
+  /* ── 旅の一覧 ── */
+  .trip{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.04);
+        border:1px solid rgba(255,255,255,.08);border-radius:13px;padding:13px 14px;margin-bottom:9px;
+        cursor:pointer}
+  .trip:hover{border-color:#7c6cf0;background:rgba(124,108,240,.09)}
+  .trip .n{flex:1;min-width:0}
+  .trip .n b{font-size:15px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .trip .n span{font-size:11px;color:#8087a8}
+
+  /* ── モーダル ── */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.62);display:flex;align-items:flex-end;
+        justify-content:center;z-index:100;padding:0}
+  .modal{background:#191a30;border:1px solid rgba(255,255,255,.1);border-radius:18px 18px 0 0;
+         width:100%;max-width:560px;max-height:88vh;overflow:auto;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+  @media(min-width:560px){.mask{align-items:center;padding:16px}.modal{border-radius:18px}}
+  .modal h2{margin:0 0 14px;font-size:16px}
+  .row2{display:flex;gap:9px}
+  .row2 .sec{flex:1}
+  .btns{display:flex;gap:9px;margin-top:16px}
+  .btns button{flex:1;padding:13px;border-radius:11px;border:1px solid rgba(255,255,255,.14);
+               background:transparent;color:#c9cde6;font-size:14px}
+  .btns .pri{border:none;background:linear-gradient(135deg,#845EF7,#5C7CFA);color:#fff;font-weight:700}
+  .btns .del{border-color:rgba(255,107,107,.3);color:#FF6B6B}
+  .back{flex:none;width:34px;height:34px;border-radius:9px;border:1px solid rgba(255,255,255,.14);
+        background:transparent;color:#c9cde6;font-size:15px}
 </style>
 </head>
 <body>
 <header>
-  <h1>🧳 <input id="title" placeholder="旅の名前"></h1>
+  <div class="hrow" id="hrow"></div>
   <div class="sync" id="sync">接続中…</div>
 </header>
-
-<main>
-  <div class="sec">
-    <label>📅 日程</label>
-    <input id="dates" placeholder="例: 11/22(土) 〜 11/24(月)">
-  </div>
-  <div class="sec">
-    <label>🏨 宿・交通</label>
-    <textarea id="stay" placeholder="宿の名前、住所、チェックイン時刻&#10;飛行機・新幹線の便名や座席"></textarea>
-  </div>
-
-  <div id="days"></div>
-  <button class="addday" id="addday">＋ 日程を追加</button>
-
-  <div class="sec">
-    <label>🎒 持ち物</label>
-    <textarea id="packing" placeholder="パスポート&#10;充電器&#10;常備薬"></textarea>
-  </div>
-  <div class="sec">
-    <label>📝 メモ</label>
-    <textarea id="memo" placeholder="行きたい店、予算、やること"></textarea>
-  </div>
-
-  <div class="foot">
-    変更は自動で保存され、相手の画面にもすぐ反映されます。<br>
-    このURLを知っている人は誰でも編集できます。
-  </div>
-</main>
+<main id="main"></main>
+<div id="modalRoot"></div>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -99,34 +114,106 @@ firebase.initializeApp({
   databaseURL:"https://nydaytodo-e0f20-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId:"nydaytodo-e0f20"
 });
-
-/* ?id=xxx で複数の旅を分けられる。指定が無ければ default。 */
-var TRIP = new URLSearchParams(location.search).get("id") || "default";
-var ref = firebase.database().ref("trip/" + TRIP);
+var db = firebase.database();
 
 var sync = document.getElementById("sync");
-var state = { title:"", dates:"", stay:"", packing:"", memo:"", days:[] };
-var applying = false;   /* 自分で描画している最中の input を保存しない */
+function say(m, ok){ sync.textContent = m; sync.className = "sync" + (ok ? " ok" : ""); }
 
-function say(msg, ok){ sync.textContent = msg; sync.className = "sync" + (ok ? " ok" : ""); }
+var TRIP = new URLSearchParams(location.search).get("id") || "";
+var state = { title:"", dates:"", stay:"", packing:"", memo:"", days:[] };
+var trips = null;        /* 一覧。null は読み込み中 */
+var applying = false;    /* 描画中の input イベントを保存に流さない */
+var ref = null;
+var openItem = null;     /* モーダルで開いている {di, ii} */
 
 /* 打っている最中のフィールドは上書きしない。相手の保存が届いたときに
    カーソルが飛んだり文字が消えたりするのを防ぐ。 */
 function setVal(el, v){
+  if (!el) return;
   if (document.activeElement === el) return;
   if (el.value !== (v || "")) el.value = v || "";
 }
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+
+/* ─────────── 旅の一覧 ─────────── */
+
+function showList(){
+  document.getElementById("hrow").innerHTML = '<h1>🧳 旅のしおり</h1>';
+  var main = document.getElementById("main");
+  if (trips === null){ main.innerHTML = '<p style="color:#7f86a8">読み込み中…</p>'; return; }
+
+  var keys = Object.keys(trips);
+  main.innerHTML =
+    keys.map(function(k){
+      var t = trips[k] || {};
+      var days = (t.days || []).filter(Boolean);
+      var n = days.reduce(function(a,d){ return a + ((d.items||[]).filter(Boolean).length); }, 0);
+      return '<div class="trip" data-id="' + esc(k) + '">' +
+        '<div style="font-size:20px">🗺️</div>' +
+        '<div class="n"><b>' + esc(t.title || "(名前なし)") + '</b>' +
+        '<span>' + esc(t.dates || "日程未定") + ' ・ ' + days.length + '日 / 予定' + n + '件</span></div>' +
+        '<div style="color:#5d6484">›</div></div>';
+    }).join("") +
+    (keys.length ? "" : '<p style="color:#7f86a8;text-align:center;padding:30px 0">まだ旅がありません</p>') +
+    '<button class="addday" id="newtrip">＋ 新しい旅を作る</button>' +
+    '<div class="foot">このURLを知っている人は誰でも編集できます。</div>';
+
+  Array.prototype.forEach.call(main.querySelectorAll(".trip"), function(el){
+    el.addEventListener("click", function(){ location.search = "?id=" + encodeURIComponent(el.dataset.id); });
+  });
+  document.getElementById("newtrip").addEventListener("click", function(){
+    var name = prompt("旅の名前（例: 那須塩原・白河）");
+    if (name === null) return;
+    /* キーは時刻から作る。日本語をキーにすると Firebase のパスで扱いづらい。 */
+    var id = "t" + Date.now();
+    db.ref("trip/" + id).set({ title:name || "", dates:"", stay:"", packing:"", memo:"", days:[] })
+      .then(function(){ location.search = "?id=" + id; })
+      .catch(function(e){ say("作成できませんでした: " + e.message); });
+  });
+}
+
+/* ─────────── しおり本体 ─────────── */
 
 var FIELDS = ["title","dates","stay","packing","memo"];
 
+function showTrip(){
+  document.getElementById("hrow").innerHTML =
+    '<button class="back" id="back" title="旅の一覧へ">‹</button>' +
+    '<h1>🧳 <input id="title" placeholder="旅の名前"></h1>';
+  document.getElementById("back").addEventListener("click", function(){ location.search = ""; });
+
+  document.getElementById("main").innerHTML =
+    '<div class="sec"><label>📅 日程</label><input id="dates" placeholder="例: 11/22(土) 〜 11/24(月)"></div>' +
+    '<div class="sec"><label>🏨 宿・交通</label><textarea id="stay" placeholder="宿の名前、住所、チェックイン時刻&#10;飛行機・新幹線の便名や座席"></textarea></div>' +
+    '<div id="days"></div>' +
+    '<button class="addday" id="addday">＋ 日程を追加</button>' +
+    '<div class="sec"><label>🎒 持ち物</label><textarea id="packing" placeholder="充電器&#10;常備薬"></textarea></div>' +
+    '<div class="sec"><label>📝 メモ</label><textarea id="memo" placeholder="行きたい店、予算、やること"></textarea></div>' +
+    '<div class="foot">変更は自動で保存され、相手の画面にもすぐ反映されます。<br>このURLを知っている人は誰でも編集できます。</div>';
+
+  FIELDS.forEach(function(k){
+    document.getElementById(k).addEventListener("input", function(e){
+      if (applying) return;
+      state[k] = e.target.value; save();
+    });
+  });
+  document.getElementById("addday").addEventListener("click", function(){
+    state.days.push({ label:"", items:[] }); save(); render();
+  });
+}
+
 function render(){
+  if (!TRIP) { showList(); return; }
   applying = true;
   FIELDS.forEach(function(k){ setVal(document.getElementById(k), state[k]); });
 
   var wrap = document.getElementById("days");
-  /* 日ごと・項目ごとに作り直すと入力欄が毎回入れ替わってしまうので、
-     件数が変わったときだけ組み立て直す。 */
+  if (!wrap) { applying = false; return; }
+  /* 件数が変わったときだけ組み立て直す。毎回作り直すと入力欄が
+     入れ替わってカーソルが飛ぶ。 */
   if (wrap.childElementCount !== state.days.length) wrap.innerHTML = "";
+
   state.days.forEach(function(day, di){
     var box = wrap.children[di];
     if (!box){
@@ -143,51 +230,173 @@ function render(){
         state.days[di].label = e.target.value; save();
       });
       box.querySelector(".dayhead .x").addEventListener("click", function(){
+        if (!confirm("この日をまるごと削除しますか？")) return;
         state.days.splice(di,1); save(); render();
       });
       box.querySelector(".add").addEventListener("click", function(){
-        state.days[di].items.push({time:"",what:""}); save(); render();
-        var list = box.querySelectorAll(".item .what");
-        if (list.length) list[list.length-1].focus();
+        state.days[di].items.push({ time:"", what:"" }); save(); render();
+        openModal(di, state.days[di].items.length - 1);
       });
     }
     setVal(box.querySelector(".dlabel"), day.label);
-
-    var items = box.querySelector(".items");
-    if (items.childElementCount !== day.items.length) items.innerHTML = "";
-    day.items.forEach(function(it, ii){
-      var row = items.children[ii];
-      if (!row){
-        row = document.createElement("div");
-        row.className = "item";
-        row.innerHTML =
-          '<input class="time" placeholder="10:00">' +
-          '<input class="what" placeholder="何をする？">' +
-          '<button class="x" title="削除">✕</button>';
-        items.appendChild(row);
-        row.querySelector(".time").addEventListener("input", function(e){
-          if (applying) return;
-          state.days[di].items[ii].time = e.target.value; save();
-        });
-        row.querySelector(".what").addEventListener("input", function(e){
-          if (applying) return;
-          state.days[di].items[ii].what = e.target.value; save();
-        });
-        row.querySelector(".x").addEventListener("click", function(){
-          state.days[di].items.splice(ii,1); save(); render();
-        });
-      }
-      setVal(row.querySelector(".time"), it.time);
-      setVal(row.querySelector(".what"), it.what);
-    });
+    renderItems(box.querySelector(".items"), di, day.items);
   });
   applying = false;
 }
 
-/* 打つたびに書くと通信が増えるので少し待つ。相手への反映が
-   遅れて見えない程度の 400ms にしてある。 */
+function renderItems(list, di, items){
+  list.innerHTML = "";
+  items.forEach(function(it, ii){
+    var row = document.createElement("div");
+    row.className = "item";
+    row.dataset.di = di; row.dataset.ii = ii;
+    var tags = [];
+    if (it.place) tags.push("📍" + it.place);
+    if (it.cost)  tags.push("💰" + it.cost);
+    if (it.url)   tags.push("🔗リンク");
+    if (it.memo)  tags.push("📝メモ");
+    row.innerHTML =
+      '<div class="grip" title="ドラッグで並び替え">⠿</div>' +
+      '<div class="body">' +
+        '<div class="t">' + (it.time ? esc(it.time) : "時刻未定") + '</div>' +
+        '<div class="w' + (it.what ? "" : " empty") + '">' + esc(it.what || "（内容なし・タップで編集）") + '</div>' +
+        (tags.length ? '<div class="tags">' + tags.map(esc).join("") + '</div>' : "") +
+      '</div>' +
+      '<button class="x" title="削除">✕</button>';
+    row.querySelector(".body").addEventListener("click", function(){ openModal(di, ii); });
+    row.querySelector(".x").addEventListener("click", function(e){
+      e.stopPropagation();
+      state.days[di].items.splice(ii,1); save(); render();
+    });
+    attachDrag(row.querySelector(".grip"), row, di);
+    list.appendChild(row);
+  });
+}
+
+/* ─────────── 並び替え ───────────
+   HTML5 の drag&drop はスマホで動かないので Pointer Events で実装する。
+   つまみ（⠿）を押している間だけ動かし、指の位置に応じて入れ替える。
+   入れ替えは state を直接動かして描画し直す。 */
+function attachDrag(grip, row, di){
+  grip.addEventListener("pointerdown", function(ev){
+    ev.preventDefault();
+    var list = row.parentNode;
+    var from = Number(row.dataset.ii);
+    grip.setPointerCapture(ev.pointerId);
+    row.classList.add("drag");
+
+    function move(e){
+      var rows = Array.prototype.slice.call(list.children);
+      var cur = Number(row.dataset.ii);
+      var to = cur;
+      for (var i = 0; i < rows.length; i++){
+        var r = rows[i].getBoundingClientRect();
+        if (e.clientY < r.top + r.height / 2){ to = i; break; }
+        to = i;
+      }
+      if (to !== cur){
+        var arr = state.days[di].items;
+        arr.splice(to, 0, arr.splice(cur, 1)[0]);
+        renderItems(list, di, arr);
+        /* 作り直したので、掴んでいる行を取り直して掴み直す */
+        var next = list.children[to];
+        next.classList.add("drag");
+        var g = next.querySelector(".grip");
+        g.setPointerCapture(ev.pointerId);
+        g.addEventListener("pointermove", move);
+        g.addEventListener("pointerup", up);
+        grip.removeEventListener("pointermove", move);
+        grip.removeEventListener("pointerup", up);
+        grip = g; row = next;
+      }
+    }
+    function up(){
+      row.classList.remove("drag");
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", up);
+      if (Number(row.dataset.ii) !== from) save();
+      render();
+    }
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up);
+  });
+}
+
+/* ─────────── 予定の詳細モーダル ─────────── */
+
+function openModal(di, ii){
+  var it = (state.days[di] && state.days[di].items[ii]) || null;
+  if (!it) return;
+  openItem = { di:di, ii:ii };
+  var root = document.getElementById("modalRoot");
+  root.innerHTML =
+    '<div class="mask" id="mask"><div class="modal">' +
+      '<h2>予定の詳細</h2>' +
+      '<div class="row2">' +
+        '<div class="sec" style="max-width:160px"><label>🕐 時刻</label>' +
+          '<input type="time" id="m_time" step="300"></div>' +
+        '<div class="sec"><label>💰 費用</label><input id="m_cost" placeholder="例: 2,000円"></div>' +
+      '</div>' +
+      '<div class="sec"><label>✏️ 内容</label><input id="m_what" placeholder="何をする？"></div>' +
+      '<div class="sec"><label>📍 場所</label><input id="m_place" placeholder="店名・住所"></div>' +
+      '<div class="sec"><label>🔗 URL</label><input id="m_url" placeholder="https://"></div>' +
+      '<div class="sec"><label>📝 メモ</label><textarea id="m_memo" placeholder="予約番号、持ち物、注意点"></textarea></div>' +
+      '<div id="m_link"></div>' +
+      '<div class="btns">' +
+        '<button class="del" id="m_del">削除</button>' +
+        '<button class="pri" id="m_ok">閉じる</button>' +
+      '</div>' +
+    '</div></div>';
+
+  document.getElementById("m_time").value = it.time || "";
+  document.getElementById("m_what").value = it.what || "";
+  document.getElementById("m_place").value = it.place || "";
+  document.getElementById("m_url").value = it.url || "";
+  document.getElementById("m_cost").value = it.cost || "";
+  document.getElementById("m_memo").value = it.memo || "";
+  showLink(it.url);
+
+  [["m_time","time"],["m_what","what"],["m_place","place"],["m_url","url"],
+   ["m_cost","cost"],["m_memo","memo"]].forEach(function(p){
+    document.getElementById(p[0]).addEventListener("input", function(e){
+      var cur = state.days[di] && state.days[di].items[ii];
+      if (!cur) return;
+      cur[p[1]] = e.target.value;
+      if (p[1] === "url") showLink(e.target.value);
+      save(); renderOnlyRow(di, ii);
+    });
+  });
+  document.getElementById("m_del").addEventListener("click", function(){
+    if (!confirm("この予定を削除しますか？")) return;
+    state.days[di].items.splice(ii,1); save(); closeModal(); render();
+  });
+  document.getElementById("m_ok").addEventListener("click", closeModal);
+  document.getElementById("mask").addEventListener("click", function(e){
+    if (e.target.id === "mask") closeModal();
+  });
+}
+function showLink(url){
+  var box = document.getElementById("m_link");
+  if (!box) return;
+  box.innerHTML = /^https?:\/\//i.test(url || "")
+    ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" ' +
+      'style="color:#82B1FF;font-size:12px;text-decoration:none">🔗 開く</a>' : "";
+}
+function closeModal(){ openItem = null; document.getElementById("modalRoot").innerHTML = ""; }
+
+/* モーダルで打っている間に全体を render すると入力欄が作り直されて
+   カーソルが飛ぶ。一覧側はその行の表示だけ更新する。 */
+function renderOnlyRow(di, ii){
+  var wrap = document.getElementById("days");
+  if (!wrap || !wrap.children[di]) return;
+  renderItems(wrap.children[di].querySelector(".items"), di, state.days[di].items);
+}
+
+/* ─────────── 保存と同期 ─────────── */
+
 var timer = null;
 function save(){
+  if (!ref) return;
   clearTimeout(timer);
   say("保存中…");
   timer = setTimeout(function(){
@@ -197,32 +406,32 @@ function save(){
   }, 400);
 }
 
-FIELDS.forEach(function(k){
-  document.getElementById(k).addEventListener("input", function(e){
-    if (applying) return;
-    state[k] = e.target.value; save();
+function normalize(v){
+  var s = { title:"", dates:"", stay:"", packing:"", memo:"", days:[] };
+  if (!v) return s;
+  FIELDS.forEach(function(k){ s[k] = v[k] || ""; });
+  /* Firebase は空配列を落とすので、無ければ空配列に戻す。 */
+  s.days = (v.days || []).filter(Boolean).map(function(d){
+    return { label: d.label || "", items: (d.items || []).filter(Boolean) };
   });
-});
+  return s;
+}
 
-document.getElementById("addday").addEventListener("click", function(){
-  state.days.push({ label:"", items:[{time:"",what:""}] });
-  save(); render();
-});
-
-ref.on("value", function(snap){
-  var v = snap.val();
-  if (v){
-    FIELDS.forEach(function(k){ state[k] = v[k] || ""; });
-    /* Firebase は空配列を落とすので、無ければ空配列に戻す。 */
-    state.days = (v.days || []).filter(Boolean).map(function(d){
-      return { label: d.label || "", items: (d.items || []).filter(Boolean) };
-    });
-  }
-  render();
-  say("接続中 ✓", true);
-}, function(e){
-  say("読み込めませんでした: " + e.message);
-});
+if (TRIP){
+  showTrip();
+  ref = db.ref("trip/" + TRIP);
+  ref.on("value", function(snap){
+    state = normalize(snap.val());
+    render();
+    say("接続中 ✓", true);
+  }, function(e){ say("読み込めませんでした: " + e.message); });
+} else {
+  db.ref("trip").on("value", function(snap){
+    trips = snap.val() || {};
+    showList();
+    say("接続中 ✓", true);
+  }, function(e){ say("読み込めませんでした: " + e.message); });
+}
 </script>
 </body>
 </html>
