@@ -1,0 +1,17 @@
+{
+  "id": "msg_sample_mail_verdicts",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-opus-5",
+  "stop_reason": "end_turn",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"verdicts\":[{\"index\":0,\"action\":\"todo\",\"title\":\"ツアー代金の残金を支払う\",\"category\":\"お金\",\"deadline\":\"2026-10-15\",\"reason\":\"支払い期日が指定されている\"},{\"index\":1,\"action\":\"deal\",\"title\":\"交通系アプリにログインして500円分のコインをもらう\",\"category\":\"ポイ活\",\"deadline\":null,\"reason\":\"ログインだけで得られる特典\"},{\"index\":2,\"action\":\"skip\",\"title\":\"入金確認の通知\",\"category\":\"その他\",\"deadline\":null,\"reason\":\"すでに済んだことの通知\"},{\"index\":3,\"action\":\"skip\",\"title\":\"認証コードの通知\",\"category\":\"その他\",\"deadline\":null,\"reason\":\"認証操作で対応不要\"},{\"index\":4,\"action\":\"todo\",\"title\":\"打ち合わせの日程を返信する\",\"category\":\"契約・手続き\",\"deadline\":null,\"reason\":\"相手が返事を待っている\"},{\"index\":5,\"action\":\"todo\",\"title\":\"年会費の引き落としに備える\",\"category\":\"お金\",\"deadline\":\"2026-11-10\",\"reason\":\"引き落とし日が予告されている\"},{\"index\":6,\"action\":\"skip\",\"title\":\"おすすめ商品の案内\",\"category\":\"ショッピング\",\"deadline\":null,\"reason\":\"得になる条件がない\"},{\"index\":7,\"action\":\"deal\",\"title\":\"商品券プレゼントに応募する\",\"category\":\"ポイ活\",\"deadline\":null,\"reason\":\"応募すればもらえる特典\"}]}"
+    }
+  ],
+  "usage": {
+    "input_tokens": 5700,
+    "output_tokens": 640
+  }
+}

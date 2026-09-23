@@ -13,3 +13,6 @@ collected-gmail.json
 collected-gmail-imap.json
 recs-stats.json
 mac/.remind-state.json
+
+# LLM 判定の記録（メールの件名を含むので公開しない）
+.mail-verdicts-cache.json

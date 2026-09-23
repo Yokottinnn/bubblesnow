@@ -38,7 +38,8 @@
 //
 // 実行: node scripts/collect-gmail-imap.mjs
 
-import { writeFile } from 'node:fs/promises';
+import { writeFile, readFile } from 'node:fs/promises';
+import { classify, estimateCost, MODEL as CLASSIFY_MODEL } from './classify-mail.mjs';
 import tls from 'node:tls';
 import { keep, mailAppUrl } from './collect-gmail.mjs';
 
@@ -47,7 +48,8 @@ const PORT = Number(process.env.GMAIL_IMAP_PORT || 993);
 const MAX_AGE_DAYS = Number(process.env.GMAIL_MAX_AGE_DAYS || 10);
 const PER_ACCOUNT = Number(process.env.GMAIL_PER_ACCOUNT || 40);
 const TIMEOUT_MS = Number(process.env.GMAIL_IMAP_TIMEOUT_MS || 30000);
-const OUT_FILE = 'collected-gmail-imap.json';
+// 検証のときに本番の材料を上書きしないよう、書き先を差し替えられるようにする。
+const OUT_FILE = process.env.GMAIL_OUT_FILE || 'collected-gmail-imap.json';
 
 // OAuth 版と同じ検索条件。X-GM-RAW は Gmail の検索構文をそのまま受ける。
 const QUERY = `category:promotions newer_than:${MAX_AGE_DAYS}d -is:chat`;
@@ -72,22 +74,71 @@ const QUERY = `category:promotions newer_than:${MAX_AGE_DAYS}d -is:chat`;
 const ACTION_QUERY = `newer_than:${MAX_AGE_DAYS}d -is:chat -in:spam -in:trash`;
 const ACTION_PER_ACCOUNT = Number(process.env.GMAIL_ACTION_PER_ACCOUNT || 20);
 
+/* ★LLM 判定の切り替え。既定は off で、従来どおりキーワードだけ見る★
+     off      … 何も変わらない。課金なし
+     validate … 見本レスポンスで配線だけ確かめる。API を呼ばないので課金なし
+     live     … 実際に API を呼ぶ。**課金あり**
+   既定を off にしてあるのは、この収集が1日2回 launchd で自動実行されるため。
+   既定を live にすると、気づかないうちに毎日課金が始まる。 */
+const CLASSIFY_MODES = ['off', 'validate', 'live'];
+const CLASSIFY = String(process.env.CLASSIFY || 'off').toLowerCase();
+if (!CLASSIFY_MODES.includes(CLASSIFY)) {
+  console.error(`CLASSIFY が不正です: "${CLASSIFY}"（使えるのは ${CLASSIFY_MODES.join(' / ')}）`);
+  process.exit(1);
+}
+
+/* 判定済みの記録。同じメールを二度 LLM に読ませないための鍵。
+   収集は10日窓なので、記録が効かないと同じメールを毎回読み直すことになり、
+   費用が十数倍に跳ねる（月$2 → 月$33）。費用を決めているのはここ。 */
+const CACHE_FILE = process.env.CLASSIFY_CACHE || '.mail-verdicts-cache.json';
+const CACHE_KEEP_DAYS = 30;
+
+// APIキーを読む環境変数の名前。generate-recs.mjs と同じものを使う。
+const API_KEY_ENV = 'CLAUDE_API_KEY';
+
 // 件名にこれがあれば「相手が何かを待っている」と見なす。
+//
+// ★金銭と期限の語を必ず入れる★
+// 「【9月29日まで】ディズニー・クルーズラインの残金お支払い期日」が
+// 丸ごと落ちていた（2026-09-23 に発覚）。当時の語は「手続き」「期限」
+// 「お願い」などで、支払いを直接指す語が一つも無かった。
+// 同じ差出人の「クルーズ残金お支払い期日について」は末尾の「について」
+// でたまたま通っており、拾えるかどうかが偶然に左右されていた。
+// 支払期日は落としてはいけない種類なので、金銭の語は厚めに持つ。
 const ACTION_WORDS = [
+  // 返事・調整
   'ご相談', '相談', 'ご連絡', 'ご確認', 'ご返信', 'ご返答', 'ご回答',
   '日程', '面談', '面接', '打ち合わせ', '打合せ', '来社', '訪問',
   'お願い', 'ご依頼', 'ご提出', '提出', '手続き', 'お手続き',
-  '期限', '締切', '締め切り', '要対応', '未提出', 'ご対応',
   'リマインド', '再送', 'ご案内の件', 'について',
+  // 期限
+  '期限', '期日', '締切', '締め切り', '要対応', '未提出', 'ご対応',
+  'まで', '最終日', '本日まで', '残り',
+  // 金銭
+  '支払', 'お支払', '残金', '請求', 'ご請求', '入金', 'ご入金',
+  '振込', 'お振込', '振替', '引き落とし', '引落', '決済',
+  '料金', '会費', '年会費', '更新料', '延滞', '未納', '未払',
+  // 予約・契約で動きが要るもの
+  'キャンセル期限', '変更期限', '更新', '自動更新', '満了', '失効',
 ];
 
 /* 件名に依頼の語があっても、実際には対応が要らないもの。
    - 済んだことの通知（決済完了・発送）は読むだけ
    - 認証コードの類は寿命が数分で、タスクにする意味がない
    - 配信物そのもの（メルマガ）は「ご案内」を含みがち */
+/* 件名に依頼の語があっても、実際には対応が要らないもの。
+   金銭の語を厚くしたぶん、ここで「済んだことの通知」を確実に落とす。
+   支払いの依頼（まだ払っていない）と完了通知（もう払った）を
+   取り違えると、片方は漏れ、もう片方は不要なタスクになる。 */
 const ACTION_DENY = [
   /認証コード|ワンタイム|確認コード|パスワード(?:の)?(?:再設定|変更|リセット)|セキュリティ(?:通知|警告)/,
-  /決済完了|お支払い完了|入金確認|発送(?:のお知らせ|完了)|配送完了|お届け完了|領収書|ご利用明細/,
+  // 済んだこと。「完了」「しました」「受付ました」で終わるもの
+  /(?:決済|お?支払い?|入金|振込|振替|返金)(?:完了|済み?|を?受(?:付|け付け)(?:ました)?|いただき)/,
+  /* 「ご入金を確認いたしました」のように助詞が挟まる形も落とす。
+     連続一致の「入金確認」だけでは素通りした。 */
+  /(?:入金|決済|支払い?|振込)[^。\n]{0,6}確認(?:いた)?しました|ご入金ありがとう/,
+  /領収書|レシート|ご利用明細|利用明細|ご利用のお知らせ/,
+  /発送(?:のお知らせ|完了)|配送完了|お届け完了|出荷(?:完了|のお知らせ)/,
   /メールマガジン|メルマガ|ニュースレター|配信停止/,
   /自動返信|Automatic reply|Out of Office/i,
 ];
@@ -344,10 +395,16 @@ async function collectAccount({ email, pass }) {
     if (!uids.length) return { email, scanned: 0, kept: 0, promo: 0, action: 0, items: [] };
 
     const fetched = await c.send(
-      `UID FETCH ${uids.join(',')} (BODY.PEEK[HEADER.FIELDS (SUBJECT LIST-UNSUBSCRIBE MESSAGE-ID)] BODY.PEEK[1]<0.3000>)`,
+      // DATE と FROM は LLM 判定に渡す。「9月29日まで」のように年が
+      // 書かれていない期限を、受信日を起点に解釈させるために要る。
+      `UID FETCH ${uids.join(',')} (BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE LIST-UNSUBSCRIBE MESSAGE-ID)] BODY.PEEK[1]<0.3000>)`,
     );
 
     const items = [];
+    // キーワードで捨てる前の全件。LLM 判定はこちらを見る。
+    // 語の一覧に無いという理由で消えたメールを拾い直せるようにするため、
+    // 判定と収集を分けている。
+    const pool = [];
     let promo = 0;
     let action = 0;
     for (const rec of groupFetch(fetched.lines)) {
@@ -359,8 +416,11 @@ async function collectAccount({ email, pass }) {
         snippet: rec.body ? snippetFrom(rec.body) : '',
         bulk: Boolean(headerOf(raw, 'List-Unsubscribe')),
         messageId: headerOf(raw, 'Message-ID'),
+        from: decodeWords(headerOf(raw, 'From')),
+        date: headerOf(raw, 'Date'),
       };
       if (!item.subject) continue;
+      pool.push(item);
 
       /* お得情報の判定は OAuth 版と共有する（片方だけ緩むのを防ぐため）。
          そこを通らなかったものだけ、対応が要るかを見る。
@@ -394,11 +454,114 @@ async function collectAccount({ email, pass }) {
       }
     }
 
-    return { email, scanned: uids.length, kept: items.length, promo, action, items };
+    return { email, scanned: uids.length, kept: items.length, promo, action, items, pool };
   } finally {
     try { await c.send('LOGOUT'); } catch { /* 閉じるだけ */ }
     sock.destroy();
   }
+}
+
+/** 判定済みの記録を読む。壊れていても落とさず、空から始める。 */
+async function readCache() {
+  try {
+    const c = JSON.parse(await readFile(CACHE_FILE, 'utf8'));
+    return c && typeof c === 'object' && c.byMessageId ? c.byMessageId : {};
+  } catch { return {}; }
+}
+
+/** 古い記録を落として書き戻す。放っておくと際限なく増えるため。 */
+async function writeCache(byMessageId) {
+  const cutoff = Date.now() - CACHE_KEEP_DAYS * 86400000;
+  const kept = {};
+  for (const [k, v] of Object.entries(byMessageId)) {
+    const at = Date.parse(v && v.at);
+    if (Number.isFinite(at) && at < cutoff) continue;
+    kept[k] = v;
+  }
+  await writeFile(CACHE_FILE, JSON.stringify({ byMessageId: kept }, null, 2));
+  return Object.keys(kept).length;
+}
+
+const ICON = {
+  お金: '💰', '契約・手続き': '✉️', グルメ: '🍽️', おでかけ: '🗺️',
+  ショッピング: '🛍️', エンタメ: '🎬', ポイ活: '🎁', その他: '📧',
+};
+
+/** 判定結果を recs の材料の形に直す。skip は捨てる。 */
+function toItem(v) {
+  if (v.action === 'skip') return null;
+  return {
+    key: 'メール',
+    category: v.action === 'todo' ? (v.category === 'お金' ? 'お金' : '契約・手続き') : v.category,
+    icon: ICON[v.category] || '📧',
+    title: String(v.title || v.subject).slice(0, 90),
+    desc: v.snippet,
+    url: mailAppUrl(v.messageId),
+    via: 'gmail',
+    // 期限が読み取れたものはタスクの期限として使う。
+    // Slack のリマインドがこれを見るので、支払期日が鳴るようになる。
+    ...(v.deadline ? { deadline: v.deadline } : {}),
+    reason: v.reason,
+  };
+}
+
+/**
+ * 取得した全件を LLM に読ませて判定する。
+ *
+ * ★キーワード判定は残す★
+ * ここが落ちても収集が丸ごと無に帰さないよう、失敗時は従来の結果を使う。
+ * LLM を足したせいで、それまで拾えていたものまで消えるのが一番困る。
+ */
+async function classifyPool(pool, keywordItems) {
+  const cache = await readCache();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const fresh = [];
+  const cached = [];
+  for (const m of pool) {
+    const hit = m.messageId && cache[m.messageId];
+    if (hit) cached.push({ ...m, ...hit });
+    else fresh.push(m);
+  }
+
+  const est = estimateCost(fresh.length, CLASSIFY_MODEL);
+  console.log(`\n判定: ${pool.length}件中 ${cached.length}件は記録済み、${fresh.length}件を判定`);
+  console.log(`  モデル: ${CLASSIFY_MODEL}（${est.batches}回に分割）`);
+  console.log(`  見積もり: 約 $${est.usd.toFixed(3)}${CLASSIFY === 'validate' ? '（validate なので実際には呼びません）' : ''}`);
+
+  let results = [];
+  try {
+    const r = await classify(fresh, {
+      today,
+      model: CLASSIFY_MODEL,
+      apiKey: process.env[API_KEY_ENV],
+      callsApi: CLASSIFY === 'live',
+    });
+    results = r.results;
+    if (r.missing) console.log(`  ⚠️ ${r.missing}件は判定が返りませんでした`);
+  } catch (e) {
+    console.error(`  ⚠️ 判定に失敗: ${e.message}`);
+    console.error('     キーワード判定の結果をそのまま使います。');
+    return { items: keywordItems, used: 'keyword' };
+  }
+
+  for (const v of results) {
+    if (!v.messageId) continue;
+    cache[v.messageId] = {
+      action: v.action, title: v.title, category: v.category,
+      deadline: v.deadline, reason: v.reason, at: new Date().toISOString(),
+    };
+  }
+  const size = await writeCache(cache);
+
+  const all = [...cached, ...results];
+  const items = all.map(toItem).filter(Boolean);
+  const byAction = {};
+  for (const v of all) byAction[v.action] = (byAction[v.action] || 0) + 1;
+  console.log(`  内訳: 要対応 ${byAction.todo || 0} / お得 ${byAction.deal || 0} / 対象外 ${byAction.skip || 0}`);
+  console.log(`  記録: ${size}件を保持`);
+
+  return { items, used: 'llm' };
 }
 
 async function main() {
@@ -415,8 +578,8 @@ async function main() {
     process.exit(1);
   }
 
-  const all = [];
-  const seen = new Set();
+  const keywordItems = [];
+  const pool = [];
   let failures = 0;
   let promoTotal = 0;
   let actionTotal = 0;
@@ -429,19 +592,37 @@ async function main() {
       console.log(`  @${domain}: ${r.scanned}件を確認 → ${r.kept}件を採用（お得 ${r.promo} / 要対応 ${r.action}）`);
       promoTotal += r.promo || 0;
       actionTotal += r.action || 0;
-      for (const it of r.items) {
-        const k = it.title.toLowerCase().replace(/\s/g, '');
-        if (seen.has(k)) continue;
-        seen.add(k);
-        all.push(it);
-      }
+      keywordItems.push(...r.items);
+      pool.push(...(r.pool || []));
     } catch (e) {
       failures += 1;
       console.error(`  ⚠️ @${domain}: ${e.message}`);
     }
   }
 
-  console.log(`\n合計 ${all.length}件（重複除去後） — お得 ${promoTotal} / 要対応 ${actionTotal}`);
+  console.log(`\nキーワード判定: ${keywordItems.length}件 — お得 ${promoTotal} / 要対応 ${actionTotal}`);
+
+  // LLM 判定を使うなら、キーワードで絞る前の全件を読ませて置き換える。
+  // off のときは何も呼ばないので、従来と全く同じ動きになる。
+  let source = 'keyword';
+  let picked = keywordItems;
+  if (CLASSIFY !== 'off') {
+    const c = await classifyPool(pool, keywordItems);
+    picked = c.items;
+    source = c.used;
+  }
+
+  // タイトルで重複を除く。アカウントをまたいで同じ案内が届くため。
+  const all = [];
+  const seen = new Set();
+  for (const it of picked) {
+    const k = String(it.title).toLowerCase().replace(/\s/g, '');
+    if (seen.has(k)) continue;
+    seen.add(k);
+    all.push(it);
+  }
+
+  console.log(`\n合計 ${all.length}件（重複除去後・判定は ${source}）`);
 
   // 判定より先に書く。採れた分を捨てず、古いファイルを残さないため
   // （理由は collect-gmail.mjs の同じ箇所に書いた）。
