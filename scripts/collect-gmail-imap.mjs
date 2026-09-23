@@ -39,7 +39,9 @@
 // 実行: node scripts/collect-gmail-imap.mjs
 
 import { writeFile, readFile } from 'node:fs/promises';
-import { classify, estimateCost, MODEL as CLASSIFY_MODEL } from './classify-mail.mjs';
+import {
+  classify, estimateCost, credential, MODEL as CLASSIFY_MODEL,
+} from './classify-mail.mjs';
 import tls from 'node:tls';
 import { keep, mailAppUrl } from './collect-gmail.mjs';
 
@@ -93,8 +95,6 @@ if (!CLASSIFY_MODES.includes(CLASSIFY)) {
 const CACHE_FILE = process.env.CLASSIFY_CACHE || '.mail-verdicts-cache.json';
 const CACHE_KEEP_DAYS = 30;
 
-// APIキーを読む環境変数の名前。generate-recs.mjs と同じものを使う。
-const API_KEY_ENV = 'CLAUDE_API_KEY';
 
 // 件名にこれがあれば「相手が何かを待っている」と見なす。
 //
@@ -487,9 +487,26 @@ const ICON = {
   ショッピング: '🛍️', エンタメ: '🎬', ポイ活: '🎁', その他: '📧',
 };
 
-/** 判定結果を recs の材料の形に直す。skip は捨てる。 */
-function toItem(v) {
+/** JST の今日を YYYY-MM-DD で。サーバのTZに依存させない。 */
+export function todayJst(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now);
+}
+
+/**
+ * 判定結果を recs の材料の形に直す。skip は捨てる。
+ *
+ * ★期限切れのお得情報は出さない★
+ * 収集は10日窓なので、締め切りが過ぎたセールやキャンペーンが混ざる。
+ * 実際に 9/15・9/17 締め切りのものが候補に並んだ（2026-09-23 の実行）。
+ * 応募できないものを出しても選ぶ手間が増えるだけなので落とす。
+ * 一方、要対応（todo）は期限が過ぎていても残す。未払いの支払いは
+ * 期限を過ぎたからこそ知らせる必要がある。
+ */
+export function toItem(v, today = todayJst()) {
   if (v.action === 'skip') return null;
+  if (v.action === 'deal' && v.deadline && v.deadline < today) return null;
   return {
     key: 'メール',
     category: v.action === 'todo' ? (v.category === 'お金' ? 'お金' : '契約・手続き') : v.category,
@@ -534,7 +551,7 @@ async function classifyPool(pool, keywordItems) {
     const r = await classify(fresh, {
       today,
       model: CLASSIFY_MODEL,
-      apiKey: process.env[API_KEY_ENV],
+      apiKey: credential(),
       callsApi: CLASSIFY === 'live',
     });
     results = r.results;
@@ -555,7 +572,13 @@ async function classifyPool(pool, keywordItems) {
   const size = await writeCache(cache);
 
   const all = [...cached, ...results];
-  const items = all.map(toItem).filter(Boolean);
+  /* ★map に関数をそのまま渡さない★
+     Array.map は (要素, 添字, 配列) を渡すので、`all.map(toItem)` と書くと
+     toItem の第2引数 today に添字（数値）が入る。文字列の日付と数値を
+     比べても常に false になり、期限切れの除外が丸ごと効かなくなる。
+     実際に 9/15・9/17 締め切りのものが候補に残った（2026-09-23）。
+     引数を明示して渡すこと。 */
+  const items = all.map((v) => toItem(v, today)).filter(Boolean);
   const byAction = {};
   for (const v of all) byAction[v.action] = (byAction[v.action] || 0) + 1;
   console.log(`  内訳: 要対応 ${byAction.todo || 0} / お得 ${byAction.deal || 0} / 対象外 ${byAction.skip || 0}`);
@@ -652,7 +675,13 @@ async function main() {
     console.warn(`\n⚠️ ${failures}件のアカウントで失敗しましたが、過半数は採れているので続けます。`);
   }
 
-  console.log('=== 完了・課金は発生していません（$0）===');
+  // ★live のときに「課金なし」と出さない★
+  // IMAP の読み取りは無料だが、LLM 判定は有料。区別せず $0 と書いていると、
+  // 課金が始まったことに気づけない。MODE で挙動が変わる作りでは、
+  // 完了メッセージも MODE に従わせること。
+  console.log(CLASSIFY === 'live'
+    ? '=== 完了（LLM 判定を実行したため課金あり）==='
+    : '=== 完了・課金は発生していません（$0）===');
 }
 
 const invoked = (process.argv[1] || '').split('/').pop();

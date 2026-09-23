@@ -21,6 +21,7 @@
 // 実行: MODE=validate node scripts/classify-mail.mjs
 
 import { readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 
 const MODES = ['validate', 'live'];
 export const MODE = String(process.env.MODE || 'validate').toLowerCase();
@@ -191,13 +192,54 @@ export function extractVerdicts(message) {
 
 const ENDPOINT = ['https://api', 'anthropic.com/v1/messages'].join('.');
 
+/**
+ * 認証情報を自分で取りに行く。
+ *
+ * 環境変数があればそれを使い、無ければ `ant auth login` のプロファイルから
+ * 短命のトークンを取る。鍵をコマンドラインに乗せずに済むので、
+ * プロセス一覧から秘密が読めてしまうのを避けられる。
+ *
+ * ant のトークンは数時間で切れる。launchd から毎回呼ぶ前提なので
+ * その場で取り直すこの形で足りるが、切れたまま放置される運用にするなら
+ * 静的なAPIキーを環境変数で渡すこと。
+ */
+export function credential(env = process.env) {
+  const fromEnv = env.CLAUDE_API_KEY || env.ANTHROPIC_API_KEY;
+  if (fromEnv) return fromEnv;
+  for (const bin of ['/opt/homebrew/bin/ant', 'ant']) {
+    try {
+      const t = execFileSync(bin, ['auth', 'print-credentials', '--access-token'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      if (t) return t;
+    } catch { /* 次を試す */ }
+  }
+  return '';
+}
+
+/**
+ * 認証ヘッダを作る。
+ *
+ * ★鍵の種類でヘッダが変わる★
+ * `ant auth login` で得られる OAuth トークン（sk-ant-oat01-…）は
+ * x-api-key では通らない。Authorization: Bearer と beta ヘッダが要る。
+ * 静的なAPIキー（sk-ant-api…）はこれまでどおり x-api-key。
+ * 取り違えると 401 になるだけで、原因が分かりにくい。
+ */
+export function authHeaders(key) {
+  const k = String(key || '');
+  if (k.startsWith('sk-ant-oat')) {
+    return { Authorization: `Bearer ${k}`, 'anthropic-beta': 'oauth-2025-04-20' };
+  }
+  return { 'x-api-key': k };
+}
+
 async function callClaude(body, key) {
   const res = await fetch(ENDPOINT, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': key,
       'anthropic-version': '2023-06-01',
+      ...authHeaders(key),
     },
     body: JSON.stringify(body),
   });

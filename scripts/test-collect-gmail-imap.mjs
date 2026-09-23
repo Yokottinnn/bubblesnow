@@ -10,7 +10,9 @@
 //
 // 実行: node scripts/test-collect-gmail-imap.mjs
 
-import { decodeWords, snippetFrom, headerOf, accounts, scan, groupFetch, keepAction } from './collect-gmail-imap.mjs';
+import {
+  decodeWords, snippetFrom, headerOf, accounts, scan, groupFetch, keepAction, toItem,
+} from './collect-gmail-imap.mjs';
 import { keep } from './collect-gmail.mjs';
 
 let pass = 0;
@@ -217,6 +219,31 @@ function ok(name, cond) { eq(name, Boolean(cond), true); }
   ok('領収書は拾わない', !keepAction('領収書発行のお知らせ'));
   ok('利用明細は拾わない', !keepAction('今月のご利用明細ができました'));
   ok('振込受付は拾わない', !keepAction('お振込を受け付けました'));
+}
+
+/* ── toItem（LLM の判定を候補の形に直す）──
+   ★期限切れのお得情報を出さない★
+   収集は10日窓なので、締め切りが過ぎたセールが混ざる。実際に
+   9/15・9/17 締め切りのものが候補に並んだ（2026-09-23 の実行）。
+   応募できないものを出しても選ぶ手間が増えるだけ。
+   ただし要対応は期限が過ぎていても残す。未払いの支払いは
+   期限を過ぎたからこそ知らせる必要がある。ここを取り違えると
+   「期限切れの支払いが静かに消える」という最悪の形になる。 */
+{
+  const T = '2026-09-23';
+  ok('期限切れのお得情報は落とす', !toItem({ action: 'deal', title: 'A', deadline: '2026-09-15' }, T));
+  ok('本日が期限のお得情報は残す', !!toItem({ action: 'deal', title: 'A', deadline: T }, T));
+  ok('先の期限のお得情報は残す', !!toItem({ action: 'deal', title: 'A', deadline: '2026-09-30' }, T));
+  ok('期限のないお得情報は残す', !!toItem({ action: 'deal', title: 'A', deadline: null }, T));
+  ok('期限切れの要対応は残す（未払いこそ知らせる）',
+    !!toItem({ action: 'todo', title: 'A', deadline: '2026-09-15' }, T));
+  ok('対象外は落とす', !toItem({ action: 'skip', title: 'A', deadline: null }, T));
+
+  const t = toItem({ action: 'todo', title: '支払う', category: 'お金', deadline: '2026-09-29', reason: 'r' }, T);
+  eq('期限をそのまま持たせる（Slack のリマインドが見る）', t.deadline, '2026-09-29');
+  eq('要対応はお金か契約・手続きに寄せる', t.category, 'お金');
+  ok('期限が無ければ deadline を付けない',
+    !('deadline' in toItem({ action: 'todo', title: 'A', deadline: null }, T)));
 }
 
 console.log(`\n${pass}件 通過 / ${fails.length}件 失敗`);
