@@ -414,8 +414,17 @@ export function refineCategory(item) {
 
 export function toRec(item) {
   const rawTitle = stripLeadingDatePhrase(decodeEntities(strip(item.title)));
-  const title = toTaskTitle(rawTitle, item.desc).slice(0, 60);
-  const deadline = extractDeadline(`${item.title} ${item.desc || ''}`);
+  // 材料側が既に行動形にしているなら、語尾を足さない。
+  // 足すと「〜を支払うをチェックする」になる（実データで発生）。
+  const title = (item.titleIsAction ? rawTitle : toTaskTitle(rawTitle, item.desc)).slice(0, 60);
+  /* ★材料が期限を持っているならそれを使う★
+     メールの LLM 判定は本文を読んで期限を取り出し、item.deadline に入れる。
+     ここで本文から取り直すと、整形済みのタイトル（「…残金を支払う」）には
+     もう「9月29日まで」の文字列が無いため、せっかく取れた期限が消える。
+     実際に支払期日が期限なしで候補に出た（2026-09-23）。
+     材料側の期限を優先し、無いときだけ本文から拾う。 */
+  const deadline = (/^\d{4}-\d{2}-\d{2}$/.test(String(item.deadline || '')) ? item.deadline : '')
+    || extractDeadline(`${item.title} ${item.desc || ''}`);
   // 期限が近いものだけ上げる。全部を🔴にすると優先度が意味を失う。
   let priority = '🟡中';
   if (deadline) {
@@ -615,17 +624,50 @@ async function main() {
   console.log(`  既出・重複 ${dropped.dup}件 / 却下済み ${dropped.dismissed}件 / タスク化済み ${dropped.alreadyTask}件 / スコア不足 ${dropped.lowScore}件`);
   console.log(`  残り ${scored.length}件\n`);
 
-  // ── 選別。点数順に取りつつ、1カテゴリが偏らないようにする ──
+  /* ── 選別 ──
+     点数順に取りつつ、1カテゴリが偏らないようにする。
+     ただし、その前に「やらないと不利益が出るもの」を先に確保する。
+
+     ★お得情報と同じ土俵で競わせない★
+     支払期日のような義務は、点数では「50%還元」に勝てない。実際に
+     9/29 締め切りの支払いが25件から漏れた（2026-09-23）。
+     見逃しの重さが違う——セールを1つ逃すのと支払いを1つ逃すのは
+     別の話なので、同じ点数表で並べること自体が誤り。
+     期限があり、かつ義務の区分のものは、カテゴリ上限も点数も無視して
+     先に席を取る。 */
   scored.sort((a, b) => b.total - a.total);
+
+  const isObligation = (s) => {
+    const dl = String(s.item.deadline || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dl)) return false;
+    return ['お金', '契約・手続き'].includes(refineCategory(s.item));
+  };
+
   const perCategory = new Map();
   const picked = [];
+  const bump = (cat) => perCategory.set(cat, (perCategory.get(cat) || 0) + 1);
+
+  // 期限が近い順。同じ日なら点数順（sort 済みなので安定ソートで保たれる）。
+  const obligations = scored.filter(isObligation)
+    .sort((a, b) => String(a.item.deadline).localeCompare(String(b.item.deadline)));
+  for (const s of obligations) {
+    if (picked.length >= MAX_RECS) break;
+    bump(refineCategory(s.item));
+    picked.push(s);
+  }
+  const taken = new Set(picked);
+
   for (const s of scored) {
     if (picked.length >= MAX_RECS) break;
+    if (taken.has(s)) continue;
     const cat = refineCategory(s.item);
     const n = perCategory.get(cat) || 0;
     if (n >= MAX_PER_CATEGORY) continue;
     perCategory.set(cat, n + 1);
     picked.push(s);
+  }
+  if (obligations.length) {
+    console.log(`  期限のある要対応を先に確保: ${Math.min(obligations.length, MAX_RECS)}件`);
   }
 
   console.log('── 選別結果 ──');

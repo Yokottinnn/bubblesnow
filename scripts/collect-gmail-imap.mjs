@@ -512,6 +512,12 @@ export function toItem(v, today = todayJst()) {
     category: v.action === 'todo' ? (v.category === 'お金' ? 'お金' : '契約・手続き') : v.category,
     icon: ICON[v.category] || '📧',
     title: String(v.title || v.subject).slice(0, 90),
+    // ★既に行動形になっていることを伝える★
+    // 判定は「〜を支払う」のような行動が分かる形でタイトルを返す。
+    // 選別側がもう一度語尾を足すと「〜を支払うをチェックする」になる
+    // （実際に発生）。語尾の一覧を増やして対応しようとすると、
+    // キーワード照合と同じで別の動詞が出るたびに破れる。印を付けて渡す。
+    titleIsAction: true,
     desc: v.snippet,
     url: mailAppUrl(v.messageId),
     via: 'gmail',
