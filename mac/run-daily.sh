@@ -44,7 +44,7 @@ heartbeat() {
   # ここで自力でリポジトリに入る。入れないなら何もしない。
   cd "$REPO" 2>/dev/null || return 0
 
-  HEARTBEAT_STATUS="${STATUS}${GMAIL_WARN}" \
+  HEARTBEAT_STATUS="${STATUS}${GMAIL_WARN}${CLASSIFY_WARN:-}" \
   HEARTBEAT_MODE="$MODE" \
   HEARTBEAT_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
     node scripts/write-heartbeat.mjs || true
@@ -118,6 +118,21 @@ fi
 GMAIL_TRIED=0
 GMAIL_OK=0
 
+# ★メールの判定に LLM を使う（1回あたり数円）★
+#
+# キーワード照合だけだと、語の一覧に無い言い回しを丸ごと落とす。
+# 実際に「【9月29日まで】…残金お支払い期日」が消えていた（2026-09-23）。
+# 本文を読ませて意味で判断させ、期限も取り出す。取り出した期限は
+# タスクの期限になるので、Slack のリマインドがその日に向けて鳴る。
+#
+# 費用は1日12通ほどで月$0.4（Haiku 4.5）。判定済みは Message-ID で
+# 記録するので、10日窓の同じメールを読み直すことはない。
+# 止めたいときは mac/.env に CLASSIFY=off と書く。
+CLASSIFY="${CLASSIFY:-live}"
+CLASSIFY_MODEL="${CLASSIFY_MODEL:-claude-haiku-4-5}"
+export CLASSIFY CLASSIFY_MODEL
+CLASSIFY_WARN=""
+
 if [ -n "${GMAIL_REFRESH_TOKENS:-}" ]; then
   echo ""
   echo "--- ①' Gmail から収集（OAuth）---"
@@ -132,10 +147,19 @@ fi
 
 if [ -n "${GMAIL_IMAP_ACCOUNTS:-}" ]; then
   echo ""
-  echo "--- ①' Gmail から収集（IMAP）---"
+  echo "--- ①' Gmail から収集（IMAP・判定=${CLASSIFY}）---"
   GMAIL_TRIED=$((GMAIL_TRIED + 1))
-  if node scripts/collect-gmail-imap.mjs; then
+  # 出力を控えておき、判定が LLM からキーワードに落ちていないかを見る。
+  # 落ちても収集自体は成功するので、終了コードだけでは気づけない。
+  # 認証が切れたまま何週間も気づかない、が一番起きやすい失敗の形。
+  IMAP_LOG="$HERE/logs/imap-last.txt"
+  if node scripts/collect-gmail-imap.mjs 2>&1 | tee "$IMAP_LOG"; then
     GMAIL_OK=$((GMAIL_OK + 1))
+    if [ "$CLASSIFY" = "live" ] && grep -q '判定は keyword' "$IMAP_LOG"; then
+      CLASSIFY_WARN="（⚠️ メール判定が効かずキーワードに後退）"
+      echo "  ⚠️ LLM 判定に失敗し、キーワード判定に戻りました"
+      echo "     認証を確認してください: ant auth login"
+    fi
   else
     echo "  ⚠️ IMAP 側の収集に失敗しました"
     echo "     アプリパスワードの失効・2段階認証の変更を疑ってください。"
