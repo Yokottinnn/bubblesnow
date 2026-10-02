@@ -38,11 +38,15 @@ async function counts(file) {
 /* 収集ファイルの付帯情報（いつ・どの経路で採れたか）。
    ★これが無いと心拍が嘘をつく★ 収集に失敗しても前回のファイルは残るので、
    counts だけ読むと「昨日の件数」を今日の成果として書いてしまう。
-   失敗しているのに健全に見えるのが一番まずい。 */
+   失敗しているのに健全に見えるのが一番まずい。
+
+   時刻のフィールド名は収集物が collectedAt、recs-stats.json が at で揃っていない。
+   collectedAt だけを見ていたため、在庫欄が常に stale 扱い＝「不明」になり、
+   60枠の上限警告も出ないままだった（2026-10-03 に判明）。両方を受け付ける。 */
 async function meta(file, maxAgeHours = 12) {
   try {
     const obj = JSON.parse(await readFile(file, 'utf8'));
-    const at = Date.parse(obj?.collectedAt || '');
+    const at = Date.parse(obj?.collectedAt || obj?.at || '');
     const ageH = Number.isFinite(at) ? (Date.now() - at) / 3600000 : null;
     return {
       method: obj?.method || null,
