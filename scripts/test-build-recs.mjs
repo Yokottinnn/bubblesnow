@@ -6,7 +6,7 @@
 //
 // 実行: node scripts/test-build-recs.mjs
 
-import { score, isDateOnlyTitle, stripLeadingDatePhrase, refineCategory, extractDeadline, toRec, isDismissed, assignIds, prune, setLearned, cleanText, truncateAtBoundary, decodeEntities, toTaskTitle } from './build-recs.mjs';
+import { score, isDateOnlyTitle, stripLeadingDatePhrase, refineCategory, extractDeadline, toRec, isDismissed, isDismissedForBuild, assignIds, prune, setLearned, cleanText, truncateAtBoundary, decodeEntities, toTaskTitle } from './build-recs.mjs';
 import { learnWeights, ngrams } from './learn-preferences.mjs';
 
 let pass = 0;
@@ -166,6 +166,32 @@ ok('完全一致は弾く', isDismissed('楽天ペイ チャージの日エン�
 ok('部分一致も弾く', isDismissed('楽天ペイ チャージの日エントリー開始', ['楽天ペイ チャージの日エントリー']));
 ok('短い語では巻き込まない', !isDismissed('サウナ新店オープン', ['サウナ']));
 ok('無関係は通す', !isDismissed('全然ちがう見出し', ['楽天ペイ チャージの日エントリー']));
+
+/* ── 選別と prune で同じ答えになるか ──
+   isDismissed は空白・句読点を残して比べるが、prune は norm() で落として比べる。
+   物差しが違うので、句読点だけが違うタイトルは選別を通り、ID を振られ、
+   書き込み直前の prune で殺されていた（2026-10-03 の実測で 25件中2件）。
+   選別は上限 25件なので、その枠には本来別の候補が入れられたはず。
+   isDismissedForBuild が両者を揃える役なので、食い違いが無いことを固定する。 */
+console.log('\n── 選別と prune の判定が食い違わないか ──');
+const gapCases = [
+  ['句読点の違い', 'エアウォレット、キャンペーン更新', 'エアウォレットキャンペーン更新'],
+  ['全角空白の違い', 'モッピー　10月の新着案件', 'モッピー10月の新着案件'],
+  ['引用符の違い', '“ふるさと納税”の駆け込み期限', 'ふるさと納税の駆け込み期限'],
+  ['中黒の違い', 'Steam・秋のセール開催', 'Steam秋のセール開催'],
+];
+for (const [label, title, dismissed] of gapCases) {
+  // prune は落とす（＝枠から外れる）
+  eq(`${label}: prune は落とす`,
+    prune([{ id: 'x', title }], { dismissedTitles: [dismissed] }).length, 0);
+  // 選別も落とす。ここが false だと ID を振ってから捨てることになる
+  ok(`${label}: 選別も落とす`, isDismissedForBuild(title, title, [dismissed]));
+}
+ok('無関係なら選別は通す', !isDismissedForBuild('全然ちがう見出し', '全然ちがう見出し', ['エアウォレットキャンペーン更新']));
+ok('却下リストが空でも通す', !isDismissedForBuild('なにかの見出し', 'なにかの見出し', []));
+ok('null が混ざっていても落ちない', !isDismissedForBuild('なにかの見出し', 'なにかの見出し', [null, '']));
+ok('短い語では巻き込まない（部分一致の挙動は変えない）',
+  !isDismissedForBuild('サウナ新店オープン', 'サウナ新店オープン', ['サウナ']));
 
 console.log('\n── ID採番: 既存の続きから振る ──');
 eq('最大値+1から', assignIds([{ title: 'a' }, { title: 'b' }], [{ id: 'r246' }, { id: 'r254' }]).map((r) => r.id), ['r255', 'r256']);

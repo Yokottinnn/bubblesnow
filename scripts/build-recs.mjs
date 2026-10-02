@@ -467,6 +467,29 @@ export function isDismissed(title, dismissedTitles) {
   });
 }
 
+/* ★選別と prune で正規化を揃える★
+   却下タイトルの照合は二箇所にあり、使う正規化が違っていた。
+   選別側の isDismissed は trim().toLowerCase() だけで空白と句読点を残すが、
+   prune（deadTitles）は それらを除去する norm() で突き合わせる。
+   結果、句読点や空白だけが違うタイトルは選別を通り、ID を振られ、
+   書き込み直前の prune で殺されていた（2026-10-03 の実測で 25件中2件）。
+
+   選別は上限 25件なので、捨てられる枠には本来別の候補が入れられた。
+   心拍も「25件を選定」と報告するのに、利用者に届くのは 22件だった。
+   2026-08-31 に直した「生タイトル vs 書き換え後タイトル」のずれと同じ型で、
+   そのときは正規化の軸までは揃えていなかった。
+
+   isDismissed の部分一致は index.html:213 と対応させる必要があるので触らない。
+   prune と同じ norm() での完全一致を足して、選別の段階で先に落とす。
+
+   rawTitle も見るのは、古い dismissedTitles に書き換え前の生タイトルの
+   まま積まれたものが混ざっているため（既存の二重照合を引き継ぐ）。 */
+export function isDismissedForBuild(finalTitle, rawTitle, dismissedTitles) {
+  const dead = new Set(dismissedTitles.filter(Boolean).map((t) => norm(t)));
+  if (dead.has(norm(finalTitle)) || dead.has(norm(rawTitle))) return true;
+  return isDismissed(finalTitle, dismissedTitles) || isDismissed(rawTitle, dismissedTitles);
+}
+
 // 2026-08-23 実機確認: max を「今 recommendations に残っている id」だけから
 // 求めると、却下・採用されて recommendations から消えた id が数に入らず、
 // カウンタが巻き戻る。dismissed は一度入ったら消えない台帳なので、そちらも
@@ -607,9 +630,9 @@ async function main() {
     const finalTitle = toRec(item).title;
     const key = norm(finalTitle);
     if (!key || seen.has(key)) { dropped.dup += 1; continue; }
-    // 生と書き換え後の両方を見る。古い dismissedTitles には
-    // 生タイトルのまま積まれたものも混ざっているため。
-    if (isDismissed(finalTitle, dismissedTitles) || isDismissed(item.title, dismissedTitles)) {
+    // 生と書き換え後の両方を、prune と同じ正規化で見る。理由は
+    // isDismissedForBuild のコメント参照。
+    if (isDismissedForBuild(finalTitle, item.title, dismissedTitles)) {
       dropped.dismissed += 1; continue;
     }
     if (taskNames.includes(key)) { dropped.alreadyTask += 1; continue; }
