@@ -484,6 +484,17 @@ export function isDismissed(title, dismissedTitles) {
 
    rawTitle も見るのは、古い dismissedTitles に書き換え前の生タイトルの
    まま積まれたものが混ざっているため（既存の二重照合を引き継ぐ）。 */
+/* ★締切の物差しも一本にする★
+   prune は「締切を過ぎたものは残しても押せない」と落とすが、選別は締切を
+   見ずに選んでいた。選別は上限 25件なので、過ぎたものを選ぶと**その枠には
+   本来別の候補が入れられた**。却下タイトルのずれと同じ、枠の浪費である
+   （2026-10-03 の実測で 25件中1件）。選別と prune の両方からこれを呼ぶ。
+
+   今日ちょうど締切のものはまだ押せるので残す（< で比べ、<= にしない）。 */
+export function isExpired(rec, todayIso) {
+  return Boolean(rec?.deadline) && rec.deadline < todayIso;
+}
+
 export function isDismissedForBuild(finalTitle, rawTitle, dismissedTitles) {
   const dead = new Set(dismissedTitles.filter(Boolean).map((t) => norm(t)));
   if (dead.has(norm(finalTitle)) || dead.has(norm(rawTitle))) return true;
@@ -532,7 +543,7 @@ export function prune(recs, {
   });
 
   // ① 締切を過ぎたものは、残しても押せない
-  const alive = kept.filter((r) => !r?.deadline || r.deadline >= iso);
+  const alive = kept.filter((r) => !isExpired(r, iso));
 
   // ② 同じタイトルが増えたら新しい方を残す（後勝ち）。
   //    毎日同じキャンペーンが流れてくるので、これが効く。
@@ -610,7 +621,9 @@ async function main() {
 
   // ── 除外 ──
   const seen = new Set(existing.map((r) => norm(r.title)));
-  const dropped = { dup: 0, dismissed: 0, alreadyTask: 0, lowScore: 0 };
+  const dropped = { dup: 0, dismissed: 0, expired: 0, alreadyTask: 0, lowScore: 0 };
+  // prune の①と同じ物差しで締切を見る（下の「★締切も選別の段階で見る★」参照）
+  const todayIso = new Date().toISOString().slice(0, 10);
   const scored = [];
 
   for (const item of items) {
@@ -627,7 +640,8 @@ async function main() {
 
        既存 recs（seen）も書き換え後のタイトルを持っているので、
        生タイトルで突き合わせても一致しないという同じずれがあった。 */
-    const finalTitle = toRec(item).title;
+    const rec = toRec(item);
+    const finalTitle = rec.title;
     const key = norm(finalTitle);
     if (!key || seen.has(key)) { dropped.dup += 1; continue; }
     // 生と書き換え後の両方を、prune と同じ正規化で見る。理由は
@@ -635,6 +649,8 @@ async function main() {
     if (isDismissedForBuild(finalTitle, item.title, dismissedTitles)) {
       dropped.dismissed += 1; continue;
     }
+    // 締切も prune と同じ物差しで見る。理由は isExpired のコメント参照。
+    if (isExpired(rec, todayIso)) { dropped.expired += 1; continue; }
     if (taskNames.includes(key)) { dropped.alreadyTask += 1; continue; }
     seen.add(key);
     const s = score(item);
@@ -644,7 +660,7 @@ async function main() {
   }
 
   console.log('── 除外 ──');
-  console.log(`  既出・重複 ${dropped.dup}件 / 却下済み ${dropped.dismissed}件 / タスク化済み ${dropped.alreadyTask}件 / スコア不足 ${dropped.lowScore}件`);
+  console.log(`  既出・重複 ${dropped.dup}件 / 却下済み ${dropped.dismissed}件 / 締切切れ ${dropped.expired}件 / タスク化済み ${dropped.alreadyTask}件 / スコア不足 ${dropped.lowScore}件`);
   console.log(`  残り ${scored.length}件\n`);
 
   /* ── 選別 ──

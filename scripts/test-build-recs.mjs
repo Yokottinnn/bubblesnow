@@ -6,7 +6,7 @@
 //
 // 実行: node scripts/test-build-recs.mjs
 
-import { score, isDateOnlyTitle, stripLeadingDatePhrase, refineCategory, extractDeadline, toRec, isDismissed, isDismissedForBuild, assignIds, prune, setLearned, cleanText, truncateAtBoundary, decodeEntities, toTaskTitle } from './build-recs.mjs';
+import { score, isDateOnlyTitle, stripLeadingDatePhrase, refineCategory, extractDeadline, toRec, isDismissed, isDismissedForBuild, isExpired, assignIds, prune, setLearned, cleanText, truncateAtBoundary, decodeEntities, toTaskTitle } from './build-recs.mjs';
 import { learnWeights, ngrams } from './learn-preferences.mjs';
 
 let pass = 0;
@@ -192,6 +192,23 @@ ok('却下リストが空でも通す', !isDismissedForBuild('なにかの見出
 ok('null が混ざっていても落ちない', !isDismissedForBuild('なにかの見出し', 'なにかの見出し', [null, '']));
 ok('短い語では巻き込まない（部分一致の挙動は変えない）',
   !isDismissedForBuild('サウナ新店オープン', 'サウナ新店オープン', ['サウナ']));
+
+/* ── 締切の物差しも選別と prune で同じか ──
+   prune は締切切れを落とすが、選別は締切を見ずに選んでいた。上限 25件の
+   選別で過ぎたものを選ぶと、その枠には本来別の候補が入れられた
+   （2026-10-03 の実測で 25件中1件）。isExpired を両方から呼んで揃える。 */
+console.log('\n── 締切切れの判定が選別と prune で揃っているか ──');
+ok('過ぎた締切は切れている', isExpired({ deadline: '2026-09-30' }, '2026-10-03'));
+ok('今日ちょうどの締切はまだ押せる', !isExpired({ deadline: '2026-10-03' }, '2026-10-03'));
+ok('未来の締切は切れていない', !isExpired({ deadline: '2026-12-01' }, '2026-10-03'));
+ok('締切が無ければ切れていない', !isExpired({ title: 'なにか' }, '2026-10-03'));
+ok('rec が無くても落ちない', !isExpired(null, '2026-10-03'));
+ok('空文字の締切は無いものとして扱う', !isExpired({ deadline: '' }, '2026-10-03'));
+// prune 側が同じ答えを返すことを突き合わせる。ここがずれると枠が無駄になる
+eq('prune も過ぎた締切を落とす',
+  prune([{ id: 'x', title: '過ぎたもの', deadline: '2026-09-30' }], { today: new Date('2026-10-03T00:00:00Z') }).length, 0);
+eq('prune は今日ちょうどの締切を残す',
+  prune([{ id: 'x', title: '今日まで', deadline: '2026-10-03' }], { today: new Date('2026-10-03T00:00:00Z') }).length, 1);
 
 console.log('\n── ID採番: 既存の続きから振る ──');
 eq('最大値+1から', assignIds([{ title: 'a' }, { title: 'b' }], [{ id: 'r246' }, { id: 'r254' }]).map((r) => r.id), ['r255', 'r256']);
