@@ -19,7 +19,26 @@
 
 set -uo pipefail
 
-STALE_SEC="${STALE_SEC:-300}"   # 切断が続いてよい上限（秒）
+# ★閾値を 300 秒から下げた理由★
+# 実測すると、サーバ側のセッションが約12時間ごとに入れ替わり、そのたびに
+# 2分20秒ほど切断される（13回の記録で間隔は 12.1 / 11.4 / 12.0 / 13.5 時間）。
+# スリープでもローカルのネットワークでもない（caffeinate がスリープを抑止して
+# おり、切断時刻の前後5分に Wi-Fi・DHCP・DNS いずれの記録も無い）。
+#
+# 問題は切断そのものより、復帰までの待ち方にある。再試行の間隔は
+#   2.4s → 4.4s → 6.1s → 19.9s → 32.4s → 74.3s（合計 ≈ 139秒）
+# と指数的に伸びる。つまり実際に繋がらないのは数十秒で、残り1分20秒は
+# クライアントが黙って待っているだけ。この間スマホからは offline に見える。
+#
+# 300秒では一度も発火しなかった（2分20秒で自動復旧してしまうため）。
+# 長い待ちに入る前に叩き起こす。
+STALE_SEC="${STALE_SEC:-60}"    # 切断が続いてよい上限（秒）
+
+# ★再起動の冷却時間★
+# kickstart -k はプロセスを殺すので、そのフォルダで動いている作業も一緒に
+# 消える。サーバ側が本当に落ちている間に繰り返し叩くと、復旧するまで
+# 再起動を続けてしまう。一度叩いたらこの秒数は手を出さない。
+KICK_COOLDOWN="${KICK_COOLDOWN:-300}"
 TAIL_BYTES=4000                 # 末尾の判定に使うバイト数
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
@@ -33,6 +52,17 @@ JOBS=(
 
 now=$(date +%s)
 uid=$(id -u)
+
+# ★正常時は黙る★
+# 30秒おきに回すので、毎回「接続中」と書くと1日2,880行たまって
+# 肝心の切断の記録が埋もれる。状態が前回と変わったときだけ記録する。
+note() {  # note <label> <state> <message>
+  local lbl="$1" st="$2" msg="$3" f="/tmp/remote-watchdog-${1}.state" prev=""
+  [ -f "$f" ] && prev=$(cat "$f" 2>/dev/null)
+  echo "$st" > "$f"
+  [ "$st" = "$prev" ] && return 0   # 同じ状態が続いている間は書かない
+  log "$msg"
+}
 
 # --- ログの上限管理 -------------------------------------------------------
 # Reconnecting のスピナー再描画が延々と書き込まれるため放置すると際限なく育つ。
@@ -56,6 +86,10 @@ rotate() {
   rm -f "$tmp"
   log "trim  $(basename "$f"): ${size} → $(stat -f %z "$f") bytes"
 }
+
+# 監視役自身のログも切り詰める。30秒おきに回るぶん、これを入れないと
+# 見張る側が肥大する。
+rotate "/Users/ny/bubblesnow/mac/logs/watchdog.log"
 
 for job in "${JOBS[@]}"; do
   label="${job%%:*}"
@@ -85,7 +119,8 @@ for job in "${JOBS[@]}"; do
 
   # 末尾に接続中の印があれば健全
   if grep -qE "(Ready|Connected) ·" <<<"$tailtxt"; then
-    log "ok    $label (接続中)"
+    note "$label" ok "ok    $label (接続中)"
+    rm -f "/tmp/remote-watchdog-${label}.since"
     continue
   fi
 
@@ -104,11 +139,20 @@ for job in "${JOBS[@]}"; do
     fi
     stuck=$(( now - since ))
     if [ "$stuck" -ge "$STALE_SEC" ]; then
-      log "KICK  $label: ${stuck}秒 切断が継続 → 強制再起動"
-      launchctl kickstart -k "gui/${uid}/${label}" 2>&1 | sed 's/^/        /'
-      rm -f "$marker"
+      kickmark="/tmp/remote-watchdog-${label}.kicked"
+      last_kick=0
+      [ -f "$kickmark" ] && last_kick=$(cat "$kickmark" 2>/dev/null || echo 0)
+      if [ $(( now - last_kick )) -lt "$KICK_COOLDOWN" ]; then
+        log "hold  $label: 切断中 ${stuck}秒だが、$(( now - last_kick ))秒前に再起動済み（冷却中）"
+      else
+        # 再起動は必ず残す。状態変化の抑制に巻き込むと記録が消える。
+        log "KICK  $label: ${stuck}秒 切断が継続 → 強制再起動"
+        launchctl kickstart -k "gui/${uid}/${label}" 2>&1 | sed 's/^/        /'
+        echo "$now" > "$kickmark"
+        rm -f "$marker"
+      fi
     else
-      log "watch $label: 切断中 ${stuck}秒（${STALE_SEC}秒で再起動）"
+      note "$label" cut "watch $label: 切断を検知（${STALE_SEC}秒続いたら再起動）"
     fi
     continue
   fi
@@ -119,6 +163,6 @@ for job in "${JOBS[@]}"; do
     log "KICK  $label: ログが${age}秒更新なし → 強制再起動"
     launchctl kickstart -k "gui/${uid}/${label}" 2>&1 | sed 's/^/        /'
   else
-    log "ok    $label (状態不明だがログは新しい: ${age}秒前)"
+    note "$label" unknown "ok    $label (状態不明だがログは新しい: ${age}秒前)"
   fi
 done

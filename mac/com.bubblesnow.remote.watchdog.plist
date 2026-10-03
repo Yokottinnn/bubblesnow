@@ -22,9 +22,13 @@
   <key>WorkingDirectory</key>
   <string>/Users/ny/bubblesnow</string>
 
-  <!-- 5分おき。切断が5分続いたら再起動する設定（STALE_SEC=300）と揃えている -->
+  <!-- 30秒おき。
+       以前は5分おき・5分継続で再起動する設定だったが、実際の切断は
+       2分20秒で自動復旧するため一度も発火しなかった。
+       長い再試行待ち（74秒）に入る前に叩けるよう、間隔と閾値を詰めている。
+       正常時は何も書かないので、頻度を上げてもログは増えない。 -->
   <key>StartInterval</key>
-  <integer>300</integer>
+  <integer>30</integer>
   <key>RunAtLoad</key>
   <true/>
 
@@ -41,6 +45,11 @@
     <string>/Users/ny</string>
     <!-- 切断がこの秒数続いたら強制再起動 -->
     <key>STALE_SEC</key>
+    <string>60</string>
+    <!-- 一度再起動したら、この秒数は手を出さない。
+         kickstart -k は動いている作業ごと消すので、サーバ側が落ちている間に
+         繰り返し叩き続けるのを防ぐ。 -->
+    <key>KICK_COOLDOWN</key>
     <string>300</string>
     <!-- ログがこのサイズを超えたら末尾だけ残して切り詰める -->
     <key>MAX_BYTES</key>
