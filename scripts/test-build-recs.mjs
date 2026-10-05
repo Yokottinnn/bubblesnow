@@ -158,7 +158,7 @@ eq('X由来は source=x', rec.source, 'x');
 eq('RSS由来は source=news', toRec({ title: 'あいうえおかきくけこ', via: 'rss' }).source, 'news');
 
 const near = toRec({ title: `${now.getMonth() + 1}月${String(now.getDate()).padStart(2, '0')}日まで実施`, category: 'お金' });
-ok('締切が近ければ 🔴期限迫', near.priority === '🔴期限迫');
+ok('締切が近ければ 🔴最優先', near.priority === '🔴最優先');
 eq('締切が無ければ 🟡中', toRec({ title: '普通のおしらせです', category: 'お金' }).priority, '🟡中');
 
 console.log('\n── 却下済みの判定 ──');
@@ -420,7 +420,7 @@ eq('複数カテゴリに該当するなら判断せず元のまま',
   });
   eq('材料の期限をそのまま使う', r.deadline, '2026-09-29');
   eq('行動形のタイトルに語尾を足さない', r.title, 'ディズニー・クルーズライン残金を支払う');
-  eq('期限が近ければ優先度を上げる', r.priority, '🔴期限迫');
+  eq('期限が近ければ優先度を上げる', r.priority, '🔴最優先');
 
   // 印が無ければ従来どおり動詞を足す（X 由来の見出しはこちら）
   const x = toRec({ title: '新宿に新店オープン', desc: '本文' });

@@ -337,7 +337,11 @@ export function score(item) {
 }
 
 const CATEGORIES = ['契約・手続き', 'お金', 'ヘルスケア', 'グルメ', 'ショッピング', 'おでかけ', 'キャリア・学び', 'ヒト', 'その他'];
-const PRIORITIES = ['🟢低', '🟡中', '🔴期限迫'];
+/* ★優先度は3段階★
+   「🔴期限迫」は重要度ではなく締切までの残り時間で、低／中／最優先とは
+   別の軸だった。同じ並びに置くと意味のない比較が生まれるのでアプリ側から
+   外した。締切は deadline が持っているので、ここでも使わない。 */
+const PRIORITIES = ['🟢低', '🟡中', '🔴最優先'];
 
 // 見出しから締切が読めれば拾う。読めなければ空にする（でっち上げない）。
 export function extractDeadline(text) {
@@ -429,7 +433,7 @@ export function toRec(item) {
   let priority = '🟡中';
   if (deadline) {
     const days = (Date.parse(deadline) - Date.now()) / 86400000;
-    priority = days <= 7 ? '🔴期限迫' : '🟡中';
+    priority = days <= 7 ? '🔴最優先' : '🟡中';
   }
   // 定型文除去でほぼ空になることがある（本文の大半が宛名・注意書きだった場合）。
   // 空の詳細欄を出すより、タイトルを見出しとして繰り返す方がまだ分かる。

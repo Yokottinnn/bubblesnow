@@ -88,7 +88,7 @@ async function fbPut(path, data) {
 }
 
 // Make.com make-body-v6 の system プロンプト（実物そのまま）
-const SYSTEM_PROMPT = `BubblesNowリコメンドエンジン。タスク追加傾向を増やしdismiss傾向を減らす。サウナ好き、AI/テック好き、キャリア重視。JSON配列のみ返せ。説明文もmarkdownもHTMLタグもciteタグも絶対に含めるな。最初の文字は[、最後の文字は]であること。各要素: {id,title,desc,category,source,icon,priority,deadline,url,location}。title,descにはHTMLタグやciteタグを絶対に含めるな。プレーンテキストのみ。locationは場所名や住所。場所不明なら空文字。urlは確実に存在する公式サイトのみ。不確かなURLは空文字にせよ。壊れたリンクは絶対に含めるな。urlにはX(Twitter)の投稿URLも積極的に使え。公式サイトよりもXの投稿のほうが情報として分かりやすい場合はXのURLを優先せよ。誰かがPR・紹介・レビューしている投稿でもよい。source:gmail/calendar/news/x/instagram。category:契約・手続き/お金/ヘルスケア/グルメ/ショッピング/おでかけ/キャリア・学び/ヒト/その他。お金カテゴリにはポイ活・ポイント還元・キャッシュバックキャンペーン・クリプト関連(エアドロップ案件・NFT登録/購入インセンティブ・仮想通貨キャンペーン)も含め、必ずキャンペーン告知ページのURLを付けること。priority:🟢低/🟡中/🔴期限迫。15-25件。期限切れ除外。`;
+const SYSTEM_PROMPT = `BubblesNowリコメンドエンジン。タスク追加傾向を増やしdismiss傾向を減らす。サウナ好き、AI/テック好き、キャリア重視。JSON配列のみ返せ。説明文もmarkdownもHTMLタグもciteタグも絶対に含めるな。最初の文字は[、最後の文字は]であること。各要素: {id,title,desc,category,source,icon,priority,deadline,url,location}。title,descにはHTMLタグやciteタグを絶対に含めるな。プレーンテキストのみ。locationは場所名や住所。場所不明なら空文字。urlは確実に存在する公式サイトのみ。不確かなURLは空文字にせよ。壊れたリンクは絶対に含めるな。urlにはX(Twitter)の投稿URLも積極的に使え。公式サイトよりもXの投稿のほうが情報として分かりやすい場合はXのURLを優先せよ。誰かがPR・紹介・レビューしている投稿でもよい。source:gmail/calendar/news/x/instagram。category:契約・手続き/お金/ヘルスケア/グルメ/ショッピング/おでかけ/キャリア・学び/ヒト/その他。お金カテゴリにはポイ活・ポイント還元・キャッシュバックキャンペーン・クリプト関連(エアドロップ案件・NFT登録/購入インセンティブ・仮想通貨キャンペーン)も含め、必ずキャンペーン告知ページのURLを付けること。priority:🟢低/🟡中/🔴最優先。15-25件。期限切れ除外。`;
 
 // ★Make.com の encodeURL + substring はやめた★
 //
@@ -380,7 +380,7 @@ function salvageArray(text) {
 
 // アプリ側の想定に合わせて整形する。壊れた値を Firebase に入れない。
 const CATEGORIES = ['契約・手続き', 'お金', 'ヘルスケア', 'グルメ', 'ショッピング', 'おでかけ', 'キャリア・学び', 'ヒト', 'その他'];
-const PRIORITIES = ['🟢低', '🟡中', '🔴期限迫'];
+const PRIORITIES = ['🟢低', '🟡中', '🔴最優先'];
 const strip = (s) => String(s ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
 
 function sanitize(rec) {
