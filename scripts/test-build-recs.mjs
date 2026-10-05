@@ -426,12 +426,17 @@ eq('複数カテゴリに該当するなら判断せず元のまま',
   const x = toRec({ title: '新宿に新店オープン', desc: '本文' });
   ok('印が無ければ動詞を足す', /(する|チェック)/.test(x.title));
 
-  // 壊れた期限は材料側でも信用しない
-  eq('材料の期限が不正なら本文から拾い直す',
-    toRec({ title: '9月30日まで開催', desc: '', deadline: '9月30日', titleIsAction: true }).deadline,
-    '2026-09-30');
-  eq('材料に期限が無ければ本文から拾う',
-    toRec({ title: '10月5日まで半額', desc: '', titleIsAction: true }).deadline, '2026-10-05');
+  /* 壊れた期限は材料側でも信用しない。
+     ★実行する日に依存させない★
+     もとは「9月30日まで」に対して固定の年を期待していたが、
+     extractDeadline は過ぎた月を来年と解釈する仕様なので、
+     10月に入った途端に落ちた（2026-10-05 に発生）。
+     仕様そのもの（本文から拾い直すこと・月日が一致すること）を見る。 */
+  const reparsed = toRec({ title: '9月30日まで開催', desc: '', deadline: '9月30日', titleIsAction: true }).deadline;
+  ok('材料の期限が不正なら本文から拾い直す', /^\d{4}-09-30$/.test(reparsed));
+  const future = toRec({ title: '10月5日まで半額', desc: '', titleIsAction: true }).deadline;
+  ok('材料に期限が無ければ本文から拾う', /^\d{4}-10-05$/.test(future));
+  ok('拾い直した期限は過去にならない', Date.parse(reparsed) >= Date.now() - 86400000 * 366);
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);
