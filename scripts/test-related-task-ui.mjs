@@ -88,7 +88,25 @@ const draft = () => page.evaluate(() => {
   const q = (sel) => { const e = root.querySelector(sel); return e ? e.value : null; };
   return {
     name: q('input[placeholder="タスク名を入力"]'),
-    category: labelled('カテゴリ'),
+    /* ★カテゴリはプルダウンではなくチップ★
+       複数選べるようにしたため select ではなくなった。
+       選ばれているものは太字で、先頭（代表）には ★ が付く。
+       代表は ★ を外した名前で返し、全部の一覧も別に返す。 */
+    category: (function () {
+      const l = [...root.querySelectorAll('label')].find((x) => /^カテゴリ/.test(x.textContent.trim()));
+      if (!l) return null;
+      const on = [...l.parentElement.querySelectorAll('button')]
+        .filter((b) => Number(getComputedStyle(b).fontWeight) >= 700)
+        .map((b) => b.textContent.replace(/^★\s*/, ''));
+      return on.length ? on[0] : null;
+    })(),
+    categories: (function () {
+      const l = [...root.querySelectorAll('label')].find((x) => /^カテゴリ/.test(x.textContent.trim()));
+      if (!l) return [];
+      return [...l.parentElement.querySelectorAll('button')]
+        .filter((b) => Number(getComputedStyle(b).fontWeight) >= 700)
+        .map((b) => b.textContent.replace(/^★\s*/, ''));
+    })(),
     priority: labelled('優先度'),
     deadline: labelled('期限'),
     detail: labelled('詳細'),
