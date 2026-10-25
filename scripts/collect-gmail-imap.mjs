@@ -436,6 +436,7 @@ async function collectAccount({ email, pass }) {
           desc: item.snippet,
           url: mailAppUrl(item.messageId),
           via: 'gmail',
+          lane: 'deal',
         });
         promo += 1;
       } else if (rec.uid && actionSet.has(rec.uid) && keepAction(item.subject)) {
@@ -449,6 +450,8 @@ async function collectAccount({ email, pass }) {
           desc: item.snippet,
           url: mailAppUrl(item.messageId),
           via: 'gmail',
+          // 選別で「点数に関係なく先に席を取る」ための印（build-recs.mjs selectRecs）
+          lane: 'action',
         });
         action += 1;
       }
@@ -521,6 +524,7 @@ export function toItem(v, today = todayJst()) {
     desc: v.snippet,
     url: mailAppUrl(v.messageId),
     via: 'gmail',
+    lane: v.action === 'todo' ? 'action' : 'deal',
     // 期限が読み取れたものはタスクの期限として使う。
     // Slack のリマインドがこれを見るので、支払期日が鳴るようになる。
     ...(v.deadline ? { deadline: v.deadline } : {}),

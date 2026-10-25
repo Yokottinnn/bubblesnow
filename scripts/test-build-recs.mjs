@@ -469,6 +469,14 @@ console.log('\n── 選別: お金の枠をメールと X で取り合わせ�
   const r3 = selectRecs(gmail, { maxRecs: 25, maxPerCategory: 8, minXMoney: 3, maxGmailMoney: 4 });
   eq('X が無くてもメールは上限まで', r3.picked.length, 4);
 
+  // 要対応メールは期限が無くても、X が点数で上回っても入る（2026-10-25 の 0件の再発防止）
+  const reply = mk('gmail', 1, '契約・手続き', { lane: 'action' });
+  const manyX = Array.from({ length: 40 }, (_, i) => mk('search', 30 - (i % 10), ['お金', 'グルメ', 'おでかけ', 'ショッピング', 'その他'][i % 5]));
+  const r4 = selectRecs([...manyX, reply], { maxRecs: 25, maxPerCategory: 8, minXMoney: 3, maxGmailMoney: 4 });
+  ok('要対応メールは点数が最低でも入る', r4.picked.includes(reply));
+  const promoMail = mk('gmail', 1, 'お金', { lane: 'deal' });
+  ok('お得メールには席の保証は無い', !selectRecs([...manyX, promoMail], { maxRecs: 25, maxPerCategory: 8, minXMoney: 3, maxGmailMoney: 4 }).picked.includes(promoMail));
+
   // 実際に拾いたかった形の投稿が点数で落ちないこと
   const fund = score({ title: '不動産ファンドに10万円出資でPayPayポイント5,000円分もらえる！10月31日まで', category: 'お金', url: 'https://x.com/i/status/1', via: 'search', likes: 40 });
   ok('出資でポイントがもらえる投稿は正の点', fund.total > 0);

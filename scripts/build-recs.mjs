@@ -583,9 +583,17 @@ const isObligation = (s) => {
   return ['お金', '契約・手続き'].includes(refineCategory(s.item));
 };
 
+/* ★返事や手続きが要るメールも、期限が無くても先に席を取る★
+   2026-10-25、X のポイ活を増やした直後の実行で、メールが 25件中 0件になった。
+   X の候補が 210件に増え、反応数の加点もあって点数で上回ったため。
+   「面談場所に関するご相談」のような返事待ちのメールは、期限が書かれて
+   いなくても見逃すと相手を待たせる。お得情報と点数で競わせない。 */
+const isActionMail = (s) => s.item.via === 'gmail' && s.item.lane === 'action';
+
 /**
  * 点数を付けた候補から recs を選ぶ。順番に意味がある。
- *   ① 期限のある要対応（義務）… 点数もカテゴリ上限も無視して先に席を取る
+ *   ① 期限のある要対応（義務）と、返事や手続きが要るメール
+ *      … 点数もカテゴリ上限も無視して先に席を取る
  *   ② X の「お金」… MIN_X_MONEY 件まで先に確保する
  *   ③ 残りを点数順。カテゴリ上限と、メールのお得の上限を守る
  */
@@ -605,8 +613,12 @@ export function selectRecs(scoredIn, {
   };
 
   // ① 期限が近い順。同じ日なら点数順（sort 済みなので安定ソートで保たれる）。
+  //    期限の無い要対応メールはその後ろに点数順で続ける。
   const obligations = scored.filter(isObligation)
     .sort((a, b) => String(a.item.deadline).localeCompare(String(b.item.deadline)));
+  for (const s of scored) {
+    if (isActionMail(s) && !obligations.includes(s)) obligations.push(s);
+  }
   for (const s of obligations) {
     if (picked.length >= maxRecs) break;
     take(s, refineCategory(s.item));
@@ -777,7 +789,7 @@ async function main() {
      先に席を取る。 */
   const { picked, perCategory, obligations } = selectRecs(scored);
   if (obligations) {
-    console.log(`  期限のある要対応を先に確保: ${Math.min(obligations, MAX_RECS)}件`);
+    console.log(`  要対応（期限あり・返事待ちメール）を先に確保: ${Math.min(obligations, MAX_RECS)}件`);
   }
 
   console.log('── 選別結果 ──');
