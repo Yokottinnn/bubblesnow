@@ -64,7 +64,7 @@ const q = (text, minFaves = DEFAULT_MIN_FAVES) =>
 // ★お得情報は「お金」に集めず、対象カテゴリ側に置く★
 // 飲食の半額はグルメ、旅行セールはおでかけ、物販セールはショッピング。
 // 全部お金に入れると、その日の関心（何を食べる・どこへ行く）から探せなくなる。
-const TOPICS = [
+export const TOPICS = [
   // ── グルメ ──────────────────────────────────────────
   {
     key: 'グルメ', category: 'グルメ', icon: '🍽️',
@@ -113,9 +113,26 @@ const TOPICS = [
   {
     key: 'ポイ活', category: 'お金', icon: '💰',
     // payannounce・rakutenpay は 2026-08-16 時点でアカウント消滅（404）のため削除
-    queries: [q('ポイ活 キャンペーン 還元', 20), q('キャッシュバック キャンペーン 開始', 20)],
+    //
+    // ★検索語は「実際の投稿の言い回し」に合わせる（2026-10-25）★
+    // 当初は「ポイ活 キャンペーン 還元」の2本だけだった。X の検索は全語 AND なので、
+    // 「ファンドに10万出資で PayPayポイント○円もらえる」のような投稿は
+    // 3語を揃えて含まず、一度も拾えていなかった。こうした投稿は
+    // 「ポイント名 + もらえる/プレゼント」「出資・口座開設 + 特典」と書かれる。
+    // OR で言い換えを束ね、本数を抑えつつ言い回しを広く取る。
+    // 出資系は反応が伸びにくいので下限を低めにする（手元の下限 MIN_FAVES_FLOOR=10 と揃える）。
+    queries: [
+      q('ポイ活 キャンペーン 還元', 20),
+      q('キャッシュバック キャンペーン 開始', 20),
+      q('(PayPayポイント OR PayPay残高) (もらえる OR プレゼント OR 付与)', 20),
+      q('(楽天ポイント OR dポイント OR Vポイント OR Pontaポイント) (もらえる OR プレゼント) キャンペーン', 20),
+      q('(ファンド OR クラファン) (出資 OR 投資) (ポイント OR ギフト OR キャッシュバック) キャンペーン', 10),
+      q('口座開設 (もらえる OR プレゼント OR キャッシュバック) キャンペーン', 20),
+      q('ポイ活 (もらえる OR 円分 OR お得)', 30),
+      q('(新規登録 OR 初回登録) (円分 OR ポイント) もらえる', 20),
+    ],
     accounts: [],
-    must: ['キャンペーン', '還元', 'ポイント', 'キャッシュバック', '増量'],
+    must: ['キャンペーン', '還元', 'ポイント', 'キャッシュバック', '増量', 'もらえる', 'プレゼント', '円分', '付与', '特典', 'ポイ活'],
   },
   {
     key: 'クリプト', category: 'お金', icon: '🪙',
@@ -360,16 +377,29 @@ async function main() {
       }
     }
 
-    for (const handle of topic.accounts) {
-      const r = await fetchProfile(handle);
-      if (!r.ok) { failures.push(`@${handle} status ${r.status}`); continue; }
+    /* ★アカウントは、検索が使えるなら from: 検索で読む★
+       プロフィール HTML の経路は心拍で 0件が続いていた（X が未ログインの
+       ページに投稿を埋め込まなくなったとみられる）。検索は実ブラウザで
+       通っているので、同じ経路で `from:` を使う。検索が使えないときだけ
+       従来どおりプロフィールを試す。発信者を選んで読んでいるので、
+       いいねの下限はかけない。 */
+    const accountReads = context && topic.accounts.length
+      ? [{ label: topic.accounts.map((h) => `@${h}`).join(' '), fetch: () => searchX(context, `(${topic.accounts.map((h) => `from:${h}`).join(' OR ')}) -filter:retweets`) }]
+      : topic.accounts.map((h) => ({ label: `@${h}`, fetch: () => fetchProfile(h) }));
+    for (const acc of accountReads) {
+      const r = await acc.fetch();
+      if (!r.ok) { failures.push(`${acc.label} status ${r.status}`); continue; }
       for (const it of r.items) {
+        if (!withinAge(it.createdAt)) continue;
+        // from: 検索は複数アカウントを束ねるので、ハンドルは投稿側から取る。
+        // 取れなければ /i/status/ で開く（どのアカウントでも同じ投稿に行く）。
+        const handle = it.handle || 'i';
         const title = toTitle(it.text);
         const key = norm(title);
         if (!key || seen.has(key)) continue;
         if (!topic.must.some((w) => it.text.includes(w))) continue;
         seen.add(key);
-        collected.push({ ...pick(topic), title, desc: toDesc(it.text), url: `https://x.com/${handle}/status/${it.id}`, via: 'profile', likes: 0 });
+        collected.push({ ...pick(topic), title, desc: toDesc(it.text), url: `https://x.com/${handle}/status/${it.id}`, via: 'profile', likes: it.likes || 0 });
         viaProfile += 1;
       }
     }
@@ -389,6 +419,9 @@ async function main() {
 
   const totalSearch = report.reduce((a, r) => a + r.viaSearch, 0);
   const totalProfile = report.reduce((a, r) => a + r.viaProfile, 0);
+  // トピック別の件数。心拍に出す（トピック名と件数だけ。投稿の中身は出さない）。
+  // 合計だけだと「ポイ活が 0 件」のような偏りに気づけない。
+  const byTopic = Object.fromEntries(report.map((r) => [r.key, r.viaSearch + r.viaProfile]));
   console.log(`\n  合計 ${collected.length}件（検索 ${totalSearch} / プロフィール ${totalProfile}）\n`);
 
   // ★静かにゼロ件で終わらせない★
@@ -412,7 +445,7 @@ async function main() {
 
   await writeFile('collected-x.json', JSON.stringify({
     collectedAt: new Date().toISOString(),
-    counts: { total: collected.length, search: totalSearch, profile: totalProfile },
+    counts: { total: collected.length, search: totalSearch, profile: totalProfile, byTopic },
     items: collected,
   }, null, 2));
 

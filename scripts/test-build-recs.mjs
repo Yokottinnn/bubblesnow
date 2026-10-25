@@ -6,7 +6,8 @@
 //
 // 実行: node scripts/test-build-recs.mjs
 
-import { score, isDateOnlyTitle, stripLeadingDatePhrase, refineCategory, extractDeadline, toRec, isDismissed, isDismissedForBuild, isExpired, assignIds, prune, setLearned, cleanText, truncateAtBoundary, decodeEntities, toTaskTitle } from './build-recs.mjs';
+import { score, isDateOnlyTitle, stripLeadingDatePhrase, refineCategory, extractDeadline, toRec, isDismissed, isDismissedForBuild, isExpired, assignIds, prune, setLearned, cleanText, truncateAtBoundary, decodeEntities, toTaskTitle, selectRecs, breakdown, sourceOf } from './build-recs.mjs';
+import { sourceSummary, topicSummary } from './write-heartbeat.mjs';
 import { learnWeights, ngrams } from './learn-preferences.mjs';
 
 let pass = 0;
@@ -437,6 +438,47 @@ eq('複数カテゴリに該当するなら判断せず元のまま',
   const future = toRec({ title: '10月5日まで半額', desc: '', titleIsAction: true }).deadline;
   ok('材料に期限が無ければ本文から拾う', /^\d{4}-10-05$/.test(future));
   ok('拾い直した期限は過去にならない', Date.parse(reparsed) >= Date.now() - 86400000 * 366);
+}
+
+console.log('\n── 選別: お金の枠をメールと X で取り合わせない ──');
+{
+  setLearned(null);
+  /* 2026-10-25 の状況を再現する。メールのお得は点数が高く数も多い。
+     出どころで枠を分けないと「お金」の 8 枠がメールで埋まり、X のポイ活が
+     1件も入らなかった。 */
+  const mk = (via, total, category = 'お金', extra = {}) => ({
+    item: { title: `${via}-${total}-${category}`, category, via, url: 'https://example.com', ...extra }, total, reasons: [],
+  });
+  const gmail = Array.from({ length: 10 }, (_, i) => mk('gmail', 20 - i));
+  const x = Array.from({ length: 5 }, (_, i) => mk('search', 5 - i));
+  const food = Array.from({ length: 5 }, (_, i) => mk('search', 8 - i, 'グルメ'));
+  const r = selectRecs([...gmail, ...x, ...food], { maxRecs: 25, maxPerCategory: 8, minXMoney: 3, maxGmailMoney: 4 });
+  const money = r.picked.filter((s) => s.item.category === 'お金');
+  eq('お金の枠はカテゴリ上限まで', money.length, 8);
+  eq('メールのお得は上限 4 件まで', money.filter((s) => s.item.via === 'gmail').length, 4);
+  ok('X のお金は最低 3 件入る', money.filter((s) => s.item.via === 'search').length >= 3);
+  eq('他カテゴリは影響を受けない', r.picked.filter((s) => s.item.category === 'グルメ').length, 5);
+
+  // 期限のある要対応（義務）はメールの上限に数えず、先に入る
+  const duty = mk('gmail', 1, 'お金', { deadline: '2099-01-01' });
+  const r2 = selectRecs([...gmail, duty], { maxRecs: 25, maxPerCategory: 8, minXMoney: 3, maxGmailMoney: 4 });
+  ok('義務は点数が低くても入る', r2.picked.includes(duty));
+  eq('義務はメール上限の外（義務 1 + お得 4）', r2.picked.filter((s) => s.item.via === 'gmail').length, 5);
+
+  // X の候補が無ければ、空いた枠は誰も使わない（メールの上限は守る）
+  const r3 = selectRecs(gmail, { maxRecs: 25, maxPerCategory: 8, minXMoney: 3, maxGmailMoney: 4 });
+  eq('X が無くてもメールは上限まで', r3.picked.length, 4);
+
+  // 実際に拾いたかった形の投稿が点数で落ちないこと
+  const fund = score({ title: '不動産ファンドに10万円出資でPayPayポイント5,000円分もらえる！10月31日まで', category: 'お金', url: 'https://x.com/i/status/1', via: 'search', likes: 40 });
+  ok('出資でポイントがもらえる投稿は正の点', fund.total > 0);
+
+  eq('出どころの判定', [sourceOf({ via: 'gmail' }), sourceOf({ via: 'profile' }), sourceOf({})], ['gmail', 'x', 'news']);
+  eq('内訳は出どころ/カテゴリの件数だけ', breakdown([mk('gmail', 1), mk('search', 1), mk('search', 2, 'グルメ')]),
+    { 'gmail/お金': 1, 'x/お金': 1, 'x/グルメ': 1 });
+  eq('心拍: 出どころ別の要約', sourceSummary({ 'x/お金': 3, 'x/グルメ': 5, 'gmail/お金': 4 }), 'X 8（お金 3） / メール 4（お金 4）');
+  eq('心拍: 内訳が無ければ不明', sourceSummary(null), '不明');
+  eq('心拍: X のトピック別', topicSummary({ ポイ活: 3, グルメ: 20 }), 'ポイ活 3 / グルメ 20');
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

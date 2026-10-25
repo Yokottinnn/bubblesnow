@@ -562,6 +562,95 @@ export function prune(recs, {
   return unique.length <= limit ? unique : unique.slice(unique.length - limit);
 }
 
+/* ★「お金」の枠を出どころで分ける（2026-10-25）★
+   メールのお得（プロモーション）は全部「お金」に入り、1日 40件超届く。
+   リンク・金額・期限が揃っていて点数が高く出やすいので、カテゴリ上限 8 を
+   ほぼメールだけで埋め、X のポイ活が入る余地が無かった。
+   出どころが違えば性質も違う（メールは自分宛ての販促、X は世間で話題の案件）
+   ので、同じ土俵で点数を比べ続けると片方が常に負ける。
+     MIN_X_MONEY     … X の「お金」に最低限確保する枠（候補があれば）
+     MAX_GMAIL_MONEY … メールのお得が「お金」で取れる上限
+   期限のある要対応（義務）はこれまでどおり最優先で、この上限には数えない。 */
+const MIN_X_MONEY = Number(process.env.MIN_X_MONEY || 3);
+const MAX_GMAIL_MONEY = Number(process.env.MAX_GMAIL_MONEY || 4);
+
+export const sourceOf = (item) => (item.via === 'gmail' ? 'gmail'
+  : (item.via === 'search' || item.via === 'profile' ? 'x' : 'news'));
+
+const isObligation = (s) => {
+  const dl = String(s.item.deadline || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dl)) return false;
+  return ['お金', '契約・手続き'].includes(refineCategory(s.item));
+};
+
+/**
+ * 点数を付けた候補から recs を選ぶ。順番に意味がある。
+ *   ① 期限のある要対応（義務）… 点数もカテゴリ上限も無視して先に席を取る
+ *   ② X の「お金」… MIN_X_MONEY 件まで先に確保する
+ *   ③ 残りを点数順。カテゴリ上限と、メールのお得の上限を守る
+ */
+export function selectRecs(scoredIn, {
+  maxRecs = MAX_RECS, maxPerCategory = MAX_PER_CATEGORY,
+  minXMoney = MIN_X_MONEY, maxGmailMoney = MAX_GMAIL_MONEY,
+} = {}) {
+  const scored = [...scoredIn].sort((a, b) => b.total - a.total);
+  const perCategory = new Map();
+  const picked = [];
+  const taken = new Set();
+  let gmailMoney = 0;
+  const take = (s, cat) => {
+    perCategory.set(cat, (perCategory.get(cat) || 0) + 1);
+    picked.push(s);
+    taken.add(s);
+  };
+
+  // ① 期限が近い順。同じ日なら点数順（sort 済みなので安定ソートで保たれる）。
+  const obligations = scored.filter(isObligation)
+    .sort((a, b) => String(a.item.deadline).localeCompare(String(b.item.deadline)));
+  for (const s of obligations) {
+    if (picked.length >= maxRecs) break;
+    take(s, refineCategory(s.item));
+  }
+
+  // ② X の「お金」を先に確保する。カテゴリ上限は守る。
+  let xMoney = 0;
+  for (const s of scored) {
+    if (xMoney >= minXMoney || picked.length >= maxRecs) break;
+    if (taken.has(s) || sourceOf(s.item) !== 'x') continue;
+    const cat = refineCategory(s.item);
+    if (cat !== 'お金' || (perCategory.get(cat) || 0) >= maxPerCategory) continue;
+    take(s, cat);
+    xMoney += 1;
+  }
+
+  // ③ 残りを点数順に。
+  for (const s of scored) {
+    if (picked.length >= maxRecs) break;
+    if (taken.has(s)) continue;
+    const cat = refineCategory(s.item);
+    if ((perCategory.get(cat) || 0) >= maxPerCategory) continue;
+    if (cat === 'お金' && sourceOf(s.item) === 'gmail') {
+      if (gmailMoney >= maxGmailMoney) continue;
+      gmailMoney += 1;
+    }
+    take(s, cat);
+  }
+
+  return { picked, perCategory, obligations: obligations.length };
+}
+
+/* 心拍に出す内訳。出どころ（x / gmail / news）とカテゴリの件数だけで、
+   タイトルや本文は含めない（public リポジトリのため）。 */
+export function breakdown(list) {
+  const out = {};
+  for (const s of list) {
+    const item = s.item || s;
+    const k = `${sourceOf(item)}/${refineCategory(item)}`;
+    out[k] = (out[k] || 0) + 1;
+  }
+  return out;
+}
+
 async function loadSources() {
   const items = [];
   const found = [];
@@ -629,6 +718,7 @@ async function main() {
   // prune の①と同じ物差しで締切を見る（下の「★締切も選別の段階で見る★」参照）
   const todayIso = new Date().toISOString().slice(0, 10);
   const scored = [];
+  const lowBySource = {};
 
   for (const item of items) {
     /* ★照合は「保存する文字列」で行う★
@@ -659,7 +749,14 @@ async function main() {
     seen.add(key);
     const s = score(item);
     // 負の点は「出しても行動につながらない」と判定したもの。
-    if (s.total < 0) { dropped.lowScore += 1; continue; }
+    if (s.total < 0) {
+      dropped.lowScore += 1;
+      // どの出どころが点数で落ちているか。学習した好みが X のポイ活を
+      // 巻き添えで沈めていないかを、件数で見分けるため。
+      const src = sourceOf(item);
+      lowBySource[src] = (lowBySource[src] || 0) + 1;
+      continue;
+    }
     scored.push({ item, ...s });
   }
 
@@ -678,39 +775,9 @@ async function main() {
      別の話なので、同じ点数表で並べること自体が誤り。
      期限があり、かつ義務の区分のものは、カテゴリ上限も点数も無視して
      先に席を取る。 */
-  scored.sort((a, b) => b.total - a.total);
-
-  const isObligation = (s) => {
-    const dl = String(s.item.deadline || '');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dl)) return false;
-    return ['お金', '契約・手続き'].includes(refineCategory(s.item));
-  };
-
-  const perCategory = new Map();
-  const picked = [];
-  const bump = (cat) => perCategory.set(cat, (perCategory.get(cat) || 0) + 1);
-
-  // 期限が近い順。同じ日なら点数順（sort 済みなので安定ソートで保たれる）。
-  const obligations = scored.filter(isObligation)
-    .sort((a, b) => String(a.item.deadline).localeCompare(String(b.item.deadline)));
-  for (const s of obligations) {
-    if (picked.length >= MAX_RECS) break;
-    bump(refineCategory(s.item));
-    picked.push(s);
-  }
-  const taken = new Set(picked);
-
-  for (const s of scored) {
-    if (picked.length >= MAX_RECS) break;
-    if (taken.has(s)) continue;
-    const cat = refineCategory(s.item);
-    const n = perCategory.get(cat) || 0;
-    if (n >= MAX_PER_CATEGORY) continue;
-    perCategory.set(cat, n + 1);
-    picked.push(s);
-  }
-  if (obligations.length) {
-    console.log(`  期限のある要対応を先に確保: ${Math.min(obligations.length, MAX_RECS)}件`);
+  const { picked, perCategory, obligations } = selectRecs(scored);
+  if (obligations) {
+    console.log(`  期限のある要対応を先に確保: ${Math.min(obligations, MAX_RECS)}件`);
   }
 
   console.log('── 選別結果 ──');
@@ -776,6 +843,13 @@ async function main() {
       removed,
       total: n,
       limit: MAX_TOTAL,
+    },
+    // 出どころ/カテゴリ別の件数（中身は無し）。「候補はあったのに選ばれない」
+    // のか「そもそも候補が無い」のかを、心拍だけで見分けるため。
+    selection: {
+      candidates: breakdown(scored),
+      picked: breakdown(picked),
+      lowScoreBySource: lowBySource,
     },
   }, null, 2));
   console.log('=== 完了・課金は発生していません（$0）===');

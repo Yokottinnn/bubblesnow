@@ -77,6 +77,40 @@ export function classifyLine(c) {
   return `⚠️ キーワードに後退 — ${c.reason || '理由不明'}（認証: ${cred}）`;
 }
 
+/* recs-stats.json の selection（出どころ/カテゴリ別の件数）だけ取り出す。 */
+async function selectionInfo(file) {
+  try {
+    const s = JSON.parse(await readFile(file, 'utf8'))?.selection;
+    return s && typeof s === 'object' ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+const SOURCE_LABEL = { x: 'X', gmail: 'メール', news: 'ニュース' };
+
+/* {"x/お金": 3, "x/グルメ": 5, "gmail/お金": 4} を
+   「X 8（お金 3）/ メール 4（お金 4）」にする。お金だけ別に出すのは、
+   X のポイ活とメールのお得が同じ「お金」枠を取り合うため。 */
+export function sourceSummary(map) {
+  if (!map || typeof map !== 'object') return '不明';
+  const by = {};
+  for (const [k, v] of Object.entries(map)) {
+    const [src, cat] = k.split('/');
+    by[src] = by[src] || { total: 0, money: 0 };
+    by[src].total += Number(v) || 0;
+    if (cat === 'お金') by[src].money += Number(v) || 0;
+  }
+  const parts = ['x', 'gmail', 'news'].filter((s) => by[s])
+    .map((s) => `${SOURCE_LABEL[s]} ${by[s].total}（お金 ${by[s].money}）`);
+  return parts.length ? parts.join(' / ') : '0件';
+}
+
+export function topicSummary(byTopic) {
+  if (!byTopic || typeof byTopic !== 'object') return null;
+  return Object.entries(byTopic).map(([k, v]) => `${k} ${v}`).join(' / ');
+}
+
 /* 配列の「長さ」だけ。中身は見ない。 */
 async function length(file) {
   try {
@@ -120,6 +154,8 @@ async function main() {
   const built = await length('recs-built-preview.json');
   const stats = await counts('recs-stats.json');
   const statsMeta = await meta('recs-stats.json');
+  const selection = statsMeta.stale ? null : await selectionInfo('recs-stats.json');
+  const xTopics = x && !xMeta.stale ? topicSummary(x.byTopic) : null;
 
   /* Gmail は2経路を併用する（OAuth / IMAP）。**経路ごとに出す。**
      合算して1行にすると、片方が死んでももう片方の件数で健全に見えてしまう。
@@ -185,8 +221,8 @@ async function main() {
 
 | 材料 | 結果 |
 |---|---|
-| X | ${x && !xMeta.stale ? `${n(x.total)}件（検索 ${n(x.search)} / プロフィール ${n(x.profile)}）` : '⚠️ 今回は採れず'} |
-${oauthLine ? `| Gmail (OAuth) | ${oauthLine} |` : ''}${oauthLine && imapLine ? '\n' : ''}${imapLine ? `| Gmail (IMAP) | ${imapLine} |` : ''}${judgeLine ? `\n| メール判定 | ${judgeLine} |` : ''}${!configured ? '| Gmail | 未設定のため省略（docs/gmail-setup.md） |' : ''}
+| X | ${x && !xMeta.stale ? `${n(x.total)}件（検索 ${n(x.search)} / アカウント ${n(x.profile)}）` : '⚠️ 今回は採れず'} |
+${xTopics ? `| X の内訳 | ${xTopics} |\n` : ''}${oauthLine ? `| Gmail (OAuth) | ${oauthLine} |` : ''}${oauthLine && imapLine ? '\n' : ''}${imapLine ? `| Gmail (IMAP) | ${imapLine} |` : ''}${judgeLine ? `\n| メール判定 | ${judgeLine} |` : ''}${!configured ? '| Gmail | 未設定のため省略（docs/gmail-setup.md） |' : ''}
 
 ## 学習
 
@@ -195,7 +231,13 @@ ${learn ? `採用 ${n(learn.adopted)}件 / 却下 ${n(learn.dismissed)}件 か�
 ## 選別
 
 ${built === null ? '不明' : `${built}件を選定`}
-
+${selection ? `
+| | |
+|---|---|
+| 候補 | ${sourceSummary(selection.candidates)} |
+| 選定 | ${sourceSummary(selection.picked)} |
+| 点数で除外 | ${Object.entries(selection.lowScoreBySource || {}).map(([k, v]) => `${SOURCE_LABEL[k] || k} ${v}`).join(' / ') || '0件'} |
+` : ''}
 ## おすすめの在庫
 
 ${stats && !statsMeta.stale

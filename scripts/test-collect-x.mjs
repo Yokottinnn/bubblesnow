@@ -6,7 +6,7 @@
 //
 // 実行: node scripts/test-collect-x.mjs
 
-import { toTitle } from './collect-x.mjs';
+import { toTitle, TOPICS } from './collect-x.mjs';
 
 let pass = 0;
 let fail = 0;
@@ -38,5 +38,17 @@ eq('URLは除去する',
   toTitle('キャンペーン開始しました https://example.com/abc'),
   'キャンペーン開始しました');
 
+
+console.log('\n── ポイ活: 実際の言い回しの投稿を落とさない ──');
+{
+  /* 2026-10-25: 「ファンドに出資で PayPayポイント」系が1件も入っていなかった。
+     検索語（全語 AND）と、取得後の must の両方を通る必要がある。 */
+  const poi = TOPICS.find((t) => t.key === 'ポイ活');
+  const sample = '不動産ファンドに10万円出資でPayPayポイント5,000円分もらえる！';
+  eq('must を通る', poi.must.some((w) => sample.includes(w)), true);
+  eq('出資・ファンドの検索語がある', poi.queries.some((q) => q.includes('ファンド') && q.includes('出資')), true);
+  eq('PayPayポイントの検索語がある', poi.queries.some((q) => q.includes('PayPayポイント')), true);
+  eq('全検索語に反応の下限と言語指定が付く', poi.queries.every((q) => /min_faves:\d+ lang:ja -filter:retweets$/.test(q)), true);
+}
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail > 0) process.exit(1);
