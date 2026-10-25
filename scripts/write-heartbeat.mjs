@@ -58,6 +58,25 @@ async function meta(file, maxAgeHours = 12) {
   }
 }
 
+/* メール判定の結果（LLM が効いたか、効かなかった理由の分類）だけ取り出す。
+   collect-gmail-imap.mjs が分類済みの短い文字列だけを入れている。 */
+async function classifyInfo(file) {
+  try {
+    const c = JSON.parse(await readFile(file, 'utf8'))?.classify;
+    return c && typeof c === 'object' ? c : null;
+  } catch {
+    return null;
+  }
+}
+
+export function classifyLine(c) {
+  if (!c) return null;
+  if (c.mode === 'off') return 'キーワードのみ（CLASSIFY=off）';
+  const cred = { env: '環境変数の鍵', ant: 'ant のトークン', none: '取れず', unused: '新着なし' }[c.credential] || '不明';
+  if (c.used === 'llm') return `LLM（認証: ${cred}）`;
+  return `⚠️ キーワードに後退 — ${c.reason || '理由不明'}（認証: ${cred}）`;
+}
+
 /* 配列の「長さ」だけ。中身は見ない。 */
 async function length(file) {
   try {
@@ -128,6 +147,9 @@ async function main() {
 
   const oauthLine = routeLine(gmail, gmailMeta, process.env.GMAIL_REFRESH_TOKENS, 'OAuth');
   const imapLine = routeLine(gmailImap, gmailImapMeta, process.env.GMAIL_IMAP_ACCOUNTS, 'IMAP');
+  const judgeLine = process.env.GMAIL_IMAP_ACCOUNTS && !gmailImapMeta.stale
+    ? classifyLine(await classifyInfo('collected-gmail-imap.json'))
+    : null;
   const configured = process.env.GMAIL_IMAP_ACCOUNTS || process.env.GMAIL_REFRESH_TOKENS;
 
   /* 見出しに劣化を出す。
@@ -164,7 +186,7 @@ async function main() {
 | 材料 | 結果 |
 |---|---|
 | X | ${x && !xMeta.stale ? `${n(x.total)}件（検索 ${n(x.search)} / プロフィール ${n(x.profile)}）` : '⚠️ 今回は採れず'} |
-${oauthLine ? `| Gmail (OAuth) | ${oauthLine} |` : ''}${oauthLine && imapLine ? '\n' : ''}${imapLine ? `| Gmail (IMAP) | ${imapLine} |` : ''}${!configured ? '| Gmail | 未設定のため省略（docs/gmail-setup.md） |' : ''}
+${oauthLine ? `| Gmail (OAuth) | ${oauthLine} |` : ''}${oauthLine && imapLine ? '\n' : ''}${imapLine ? `| Gmail (IMAP) | ${imapLine} |` : ''}${judgeLine ? `\n| メール判定 | ${judgeLine} |` : ''}${!configured ? '| Gmail | 未設定のため省略（docs/gmail-setup.md） |' : ''}
 
 ## 学習
 

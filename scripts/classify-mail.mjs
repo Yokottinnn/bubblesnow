@@ -204,16 +204,56 @@ const ENDPOINT = ['https://api', 'anthropic.com/v1/messages'].join('.');
  * 静的なAPIキーを環境変数で渡すこと。
  */
 export function credential(env = process.env) {
+  return credentialInfo(env).key;
+}
+
+/**
+ * credential() の中身。鍵に加えて「どこから取ったか」と「取れなかった理由」を返す。
+ *
+ * ★理由を捨てない★
+ * 以前は ant の stderr を捨てていたので、launchd から呼んで鍵が空になっても
+ * 「401 が返った」としか分からなかった。2026-10-21 から判定がキーワードに
+ * 後退し続けていたが、Mac のログを見ない限り原因に辿り着けなかった。
+ * problems は手元のログ（mac/logs/imap-last.txt）にだけ出す。心拍には
+ * source とエラーの分類（failureReason）だけを書く。
+ */
+export function credentialInfo(env = process.env, run = execFileSync) {
   const fromEnv = env.CLAUDE_API_KEY || env.ANTHROPIC_API_KEY;
-  if (fromEnv) return fromEnv;
+  if (fromEnv) return { key: fromEnv, source: 'env', problems: [] };
+  const problems = [];
   for (const bin of ['/opt/homebrew/bin/ant', 'ant']) {
     try {
-      const t = execFileSync(bin, ['auth', 'print-credentials', '--access-token'],
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-      if (t) return t;
-    } catch { /* 次を試す */ }
+      const t = String(run(bin, ['auth', 'print-credentials', '--access-token'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })).trim();
+      if (t) return { key: t, source: 'ant', problems };
+      problems.push(`${bin}: 何も返さなかった`);
+    } catch (e) {
+      if (e.code === 'ENOENT') { problems.push(`${bin}: 見つからない`); continue; }
+      const first = String(e.stderr || '').split('\n').find((l) => l.trim()) || '';
+      problems.push(`${bin}: 終了コード ${e.status ?? '不明'}${first ? ` — ${first.trim().slice(0, 200)}` : ''}`);
+    }
   }
-  return '';
+  return { key: '', source: 'none', problems };
+}
+
+/**
+ * 判定の失敗を、心拍に書ける短い分類にする。
+ *
+ * API のエラー本文には個人情報は入らないが、念のため生の本文は心拍に
+ * 載せず、状態コードと種類だけにする。直し方が分かれる単位で分ける。
+ */
+export function failureReason(e) {
+  if (e?.code === 'NO_CREDENTIAL') return '認証情報なし（ant 未ログインか、鍵が未設定）';
+  const s = e?.status;
+  if (s === 401) return '認証エラー 401（トークン失効か、鍵が無効）';
+  if (s === 403) return '権限エラー 403';
+  if (s === 400 && /credit|balance/i.test(e?.message || '')) return '残高不足 400';
+  if (s === 404) return 'モデルが見つからない 404';
+  if (s === 429) return 'レート制限 429';
+  if (s >= 500) return `API 側の一時障害 ${s}`;
+  if (s) return `API エラー ${s}`;
+  if (e instanceof TypeError) return '通信できず';
+  return 'その他';
 }
 
 /**
@@ -243,7 +283,11 @@ async function callClaude(body, key) {
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Claude API failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const err = new Error(`Claude API failed: ${res.status} ${await res.text()}`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -282,6 +326,12 @@ export async function classify(items, { today, model = MODEL, apiKey, callsApi =
 
     let message;
     if (callsApi) {
+      // 空の鍵で投げても 401 が返るだけで、「鍵が取れなかった」と区別できない。
+      if (!apiKey) {
+        const err = new Error('認証情報がありません（CLAUDE_API_KEY も ant のトークンも取れず）');
+        err.code = 'NO_CREDENTIAL';
+        throw err;
+      }
       message = await callClaude(body, apiKey);
     } else {
       message = JSON.parse(await readFile('data/sample-mail-verdicts.json', 'utf8'));

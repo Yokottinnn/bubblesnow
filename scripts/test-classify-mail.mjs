@@ -15,8 +15,9 @@
 
 import {
   buildUserMessage, buildRequest, mergeVerdicts, extractVerdicts,
-  estimateCost, classify, SCHEMA, BODY_CHARS,
+  estimateCost, classify, SCHEMA, BODY_CHARS, credentialInfo, failureReason,
 } from './classify-mail.mjs';
+import { classifyLine } from './write-heartbeat.mjs';
 
 let pass = 0;
 const fails = [];
@@ -168,6 +169,49 @@ console.log('\n── ⑥ validate では API を呼ばない ──');
   }
   eq('通信は一度も発生しない', called, 0);
   eq('0件なら見本も読まない', (await classify([], { today: TODAY, callsApi: false })).results, []);
+}
+
+console.log('\n⑤ 失敗の理由 — 心拍に書ける分類になるか');
+{
+  // 鍵が取れないまま API を呼ばない（空の鍵の 401 と区別できなくなる）
+  const origFetch = globalThis.fetch;
+  let called = 0;
+  globalThis.fetch = async () => { called += 1; return { ok: false, status: 401, text: async () => '' }; };
+  let err = null;
+  try {
+    await classify(MAILS.slice(0, 1), { today: TODAY, callsApi: true, apiKey: '' });
+  } catch (e) { err = e; } finally { globalThis.fetch = origFetch; }
+  eq('鍵が空なら通信しない', called, 0);
+  eq('鍵が空なら NO_CREDENTIAL', err?.code, 'NO_CREDENTIAL');
+  ok('鍵が空の分類', failureReason(err).startsWith('認証情報なし'));
+
+  // API が 401 を返したら状態コードが分類に残る
+  globalThis.fetch = async () => ({ ok: false, status: 401, text: async () => '{"type":"error"}' });
+  err = null;
+  try {
+    await classify(MAILS.slice(0, 1), { today: TODAY, callsApi: true, apiKey: 'sk-ant-oat01-dummy' });
+  } catch (e) { err = e; } finally { globalThis.fetch = origFetch; }
+  eq('401 の状態コードが残る', err?.status, 401);
+  ok('401 の分類', failureReason(err).startsWith('認証エラー 401'));
+
+  ok('残高不足', failureReason(Object.assign(new Error('credit balance is too low'), { status: 400 })).startsWith('残高不足'));
+  ok('モデル無し', failureReason({ status: 404 }).startsWith('モデルが見つからない'));
+  ok('通信できず', failureReason(new TypeError('fetch failed')) === '通信できず');
+
+  // 認証情報の取り方
+  const fail = (code, status, stderr) => () => { throw Object.assign(new Error('x'), { code, status, stderr }); };
+  eq('環境変数が最優先', credentialInfo({ CLAUDE_API_KEY: 'k' }, fail()).source, 'env');
+  const none = credentialInfo({}, fail(undefined, 1, '\nnot logged in\n'));
+  eq('ant が失敗したら none', none.source, 'none');
+  ok('ant の stderr の1行目を理由に残す', none.problems[0].includes('終了コード 1 — not logged in'));
+  eq('ant が無い', credentialInfo({}, fail('ENOENT')).problems[0], '/opt/homebrew/bin/ant: 見つからない');
+  eq('ant が返せば ant', credentialInfo({}, () => 'tok\n'), { key: 'tok', source: 'ant', problems: [] });
+
+  // 心拍の1行
+  eq('心拍: LLM', classifyLine({ mode: 'live', used: 'llm', credential: 'ant' }), 'LLM（認証: ant のトークン）');
+  eq('心拍: 後退', classifyLine({ mode: 'live', used: 'keyword', reason: '認証エラー 401（トークン失効か、鍵が無効）', credential: 'ant' }),
+    '⚠️ キーワードに後退 — 認証エラー 401（トークン失効か、鍵が無効）（認証: ant のトークン）');
+  eq('心拍: 情報なし', classifyLine(null), null);
 }
 
 console.log(`\n${pass}件 通過 / ${fails.length}件 失敗`);

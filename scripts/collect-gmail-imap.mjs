@@ -40,7 +40,7 @@
 
 import { writeFile, readFile } from 'node:fs/promises';
 import {
-  classify, estimateCost, credential, MODEL as CLASSIFY_MODEL,
+  classify, estimateCost, credentialInfo, failureReason, MODEL as CLASSIFY_MODEL,
 } from './classify-mail.mjs';
 import tls from 'node:tls';
 import { keep, mailAppUrl } from './collect-gmail.mjs';
@@ -552,12 +552,21 @@ async function classifyPool(pool, keywordItems) {
   console.log(`  モデル: ${CLASSIFY_MODEL}（${est.batches}回に分割）`);
   console.log(`  見積もり: 約 $${est.usd.toFixed(3)}${CLASSIFY === 'validate' ? '（validate なので実際には呼びません）' : ''}`);
 
+  // 新しいメールが無ければ API は呼ばないので、鍵も取りに行かない。
+  const cred = fresh.length && CLASSIFY === 'live'
+    ? credentialInfo()
+    : { key: '', source: 'unused', problems: [] };
+  if (fresh.length && CLASSIFY === 'live') {
+    console.log(`  認証: ${cred.source === 'env' ? '環境変数の鍵' : cred.source === 'ant' ? 'ant のトークン' : '取れず'}`);
+    for (const p of cred.problems) console.log(`    ${p}`);
+  }
+
   let results = [];
   try {
     const r = await classify(fresh, {
       today,
       model: CLASSIFY_MODEL,
-      apiKey: credential(),
+      apiKey: cred.key,
       callsApi: CLASSIFY === 'live',
     });
     results = r.results;
@@ -565,7 +574,10 @@ async function classifyPool(pool, keywordItems) {
   } catch (e) {
     console.error(`  ⚠️ 判定に失敗: ${e.message}`);
     console.error('     キーワード判定の結果をそのまま使います。');
-    return { items: keywordItems, used: 'keyword' };
+    return {
+      items: keywordItems, used: 'keyword',
+      reason: failureReason(e), credential: cred.source,
+    };
   }
 
   for (const v of results) {
@@ -590,7 +602,7 @@ async function classifyPool(pool, keywordItems) {
   console.log(`  内訳: 要対応 ${byAction.todo || 0} / お得 ${byAction.deal || 0} / 対象外 ${byAction.skip || 0}`);
   console.log(`  記録: ${size}件を保持`);
 
-  return { items, used: 'llm' };
+  return { items, used: 'llm', reason: null, credential: cred.source };
 }
 
 async function main() {
@@ -635,10 +647,12 @@ async function main() {
   // off のときは何も呼ばないので、従来と全く同じ動きになる。
   let source = 'keyword';
   let picked = keywordItems;
+  let classifyInfo = { mode: CLASSIFY, used: 'keyword', reason: null, credential: 'unused' };
   if (CLASSIFY !== 'off') {
     const c = await classifyPool(pool, keywordItems);
     picked = c.items;
     source = c.used;
+    classifyInfo = { mode: CLASSIFY, used: c.used, reason: c.reason, credential: c.credential };
   }
 
   // タイトルで重複を除く。アカウントをまたいで同じ案内が届くため。
@@ -666,6 +680,8 @@ async function main() {
     method: 'imap',
     query: QUERY,
     counts: { total: all.length, accounts: list.length, failures, promo: promoTotal, action: actionTotal },
+    // 心拍に「判定が効いたか・効かなかった理由」を出すため。分類だけで、本文は入れない。
+    classify: classifyInfo,
     items: all,
   }, null, 2));
   console.log(`📦 ${OUT_FILE} に保存`);
