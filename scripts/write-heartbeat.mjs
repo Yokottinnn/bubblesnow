@@ -106,6 +106,23 @@ export function sourceSummary(map) {
   return parts.length ? parts.join(' / ') : '0件';
 }
 
+async function pruneInfo(file) {
+  try {
+    const p = JSON.parse(await readFile(file, 'utf8'))?.prune;
+    return p && typeof p === 'object' ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+/* 整理の理由別件数。却下リストの件数も添える（0 なら読み込みに失敗した疑い）。 */
+export function pruneSummary(p) {
+  if (!p) return null;
+  const v = (k) => Number(p[k] || 0);
+  return `却下済み ${v('dismissedId') + v('dismissedTitle')} / 期限切れ ${v('expired')} / 重複 ${v('duplicate')} / 上限超え ${v('overLimit')}`
+    + `（照合した却下リスト: ID ${v('dismissedIdsLoaded')}件・タイトル ${v('dismissedTitlesLoaded')}件）`;
+}
+
 export function topicSummary(byTopic) {
   if (!byTopic || typeof byTopic !== 'object') return null;
   return Object.entries(byTopic).map(([k, v]) => `${k} ${v}`).join(' / ');
@@ -155,6 +172,7 @@ async function main() {
   const stats = await counts('recs-stats.json');
   const statsMeta = await meta('recs-stats.json');
   const selection = statsMeta.stale ? null : await selectionInfo('recs-stats.json');
+  const pruneLine = statsMeta.stale ? null : pruneSummary(await pruneInfo('recs-stats.json'));
   const xTopics = x && !xMeta.stale ? topicSummary(x.byTopic) : null;
 
   /* Gmail は2経路を併用する（OAuth / IMAP）。**経路ごとに出す。**
@@ -244,6 +262,7 @@ ${stats && !statsMeta.stale
   ? `${n(stats.total)} / ${n(stats.limit)}件（既存 ${n(stats.existing)} + 新規 ${n(stats.added)}${stats.removed ? ` − 整理 ${stats.removed}` : ''}）`
     + (stats.total >= stats.limit ? '　⚠️ 上限に達しています' : '')
   : '不明'}
+${pruneLine ? `\n整理の内訳: ${pruneLine}\n` : ''}
 
 ---
 

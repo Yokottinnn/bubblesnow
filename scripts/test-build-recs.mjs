@@ -7,7 +7,7 @@
 // 実行: node scripts/test-build-recs.mjs
 
 import { score, isDateOnlyTitle, stripLeadingDatePhrase, refineCategory, extractDeadline, toRec, isDismissed, isDismissedForBuild, isExpired, assignIds, prune, setLearned, cleanText, truncateAtBoundary, decodeEntities, toTaskTitle, selectRecs, breakdown, sourceOf } from './build-recs.mjs';
-import { sourceSummary, topicSummary } from './write-heartbeat.mjs';
+import { sourceSummary, topicSummary, pruneSummary } from './write-heartbeat.mjs';
 import { learnWeights, ngrams } from './learn-preferences.mjs';
 
 let pass = 0;
@@ -475,7 +475,24 @@ console.log('\n── 選別: お金の枠をメールと X で取り合わせ�
   const r4 = selectRecs([...manyX, reply], { maxRecs: 25, maxPerCategory: 8, minXMoney: 3, maxGmailMoney: 4 });
   ok('要対応メールは点数が最低でも入る', r4.picked.includes(reply));
   const promoMail = mk('gmail', 1, 'お金', { lane: 'deal' });
-  ok('お得メールには席の保証は無い', !selectRecs([...manyX, promoMail], { maxRecs: 25, maxPerCategory: 8, minXMoney: 3, maxGmailMoney: 4 }).picked.includes(promoMail));
+  ok('お得メールは最低枠が 0 なら保証されない（要対応とは別扱い）', !selectRecs([...manyX, promoMail], { maxRecs: 25, maxPerCategory: 8, minXMoney: 3, maxGmailMoney: 4, minGmailMoney: 0 }).picked.includes(promoMail));
+
+  // メールのお得にも最低枠（X が点数で圧倒しても 2 件は入る）
+  const strongX = Array.from({ length: 12 }, (_, i) => mk('search', 50 - i));
+  const weakMail = Array.from({ length: 5 }, (_, i) => mk('gmail', 2 - i * 0.1, 'お金', { lane: 'deal' }));
+  const r5 = selectRecs([...strongX, ...weakMail], { maxRecs: 25, maxPerCategory: 8, minXMoney: 3, maxGmailMoney: 4, minGmailMoney: 2 });
+  eq('X が強くてもメールのお得は 2 件入る', r5.picked.filter((s) => s.item.via === 'gmail').length, 2);
+  eq('お金はカテゴリ上限 8 のまま', r5.picked.length, 8);
+
+  // 整理の理由別件数
+  const st = {};
+  prune([
+    { id: 'r1', title: 'a' }, { id: 'r2', title: 'b' }, { id: 'r3', title: 'c', deadline: '2000-01-01' },
+    { id: 'r4', title: 'd' }, { id: 'r5', title: 'd' }, { id: 'r6', title: 'e' }, { id: 'r7', title: 'f' },
+  ], { limit: 2, dismissedIds: ['r1'], dismissedTitles: ['b'], stats: st, today: new Date('2026-10-25') });
+  eq('整理の内訳を数える', st, { dismissedId: 1, dismissedTitle: 1, expired: 1, duplicate: 1, overLimit: 1 });
+  eq('心拍: 整理の内訳', pruneSummary({ dismissedId: 50, dismissedTitle: 9, expired: 0, duplicate: 0, overLimit: 0, dismissedIdsLoaded: 900, dismissedTitlesLoaded: 1438 }),
+    '却下済み 59 / 期限切れ 0 / 重複 0 / 上限超え 0（照合した却下リスト: ID 900件・タイトル 1438件）');
 
   // 実際に拾いたかった形の投稿が点数で落ちないこと
   const fund = score({ title: '不動産ファンドに10万円出資でPayPayポイント5,000円分もらえる！10月31日まで', category: 'お金', url: 'https://x.com/i/status/1', via: 'search', likes: 40 });

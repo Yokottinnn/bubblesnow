@@ -527,9 +527,13 @@ export function assignIds(recs, existing, dismissedIds = []) {
 // それでも多いときだけ古い順に削る。新しさより有用性を優先する。
 export function prune(recs, {
   limit = MAX_TOTAL, today = new Date(),
-  dismissedIds = [], dismissedTitles = [],
+  dismissedIds = [], dismissedTitles = [], stats = null,
 } = {}) {
   const iso = today.toISOString().slice(0, 10);
+  /* stats を渡すと、どの理由で何件外したかを書き込む。
+     2026-10-25 に「既存 60 + 新規 25 − 整理 59」が出たが、合計だけでは
+     却下済みの掃除なのか、別の理由で消えたのかを見分けられなかった。 */
+  const note = (k, n) => { if (stats) stats[k] = (stats[k] || 0) + n; };
 
   /* ★却下済みを枠から外す★
      アプリの dismissRec は dismissed / dismissedTitles に足すだけで、
@@ -541,13 +545,14 @@ export function prune(recs, {
   const deadIds = new Set(dismissedIds.filter(Boolean).map(String));
   const deadTitles = new Set(dismissedTitles.filter(Boolean).map((t) => norm(t)));
   const kept = recs.filter((r) => {
-    if (r?.id && deadIds.has(String(r.id))) return false;
-    if (r?.title && deadTitles.has(norm(r.title))) return false;
+    if (r?.id && deadIds.has(String(r.id))) { note('dismissedId', 1); return false; }
+    if (r?.title && deadTitles.has(norm(r.title))) { note('dismissedTitle', 1); return false; }
     return true;
   });
 
   // ① 締切を過ぎたものは、残しても押せない
   const alive = kept.filter((r) => !isExpired(r, iso));
+  note('expired', kept.length - alive.length);
 
   // ② 同じタイトルが増えたら新しい方を残す（後勝ち）。
   //    毎日同じキャンペーンが流れてくるので、これが効く。
@@ -557,8 +562,10 @@ export function prune(recs, {
     if (k) byTitle.set(k, r);
   }
   const unique = [...byTitle.values()];
+  note('duplicate', alive.length - unique.length);
 
   // ③ それでも多ければ古い順に落とす。末尾が新しいので後ろから残す。
+  note('overLimit', Math.max(0, unique.length - limit));
   return unique.length <= limit ? unique : unique.slice(unique.length - limit);
 }
 
@@ -569,9 +576,11 @@ export function prune(recs, {
    出どころが違えば性質も違う（メールは自分宛ての販促、X は世間で話題の案件）
    ので、同じ土俵で点数を比べ続けると片方が常に負ける。
      MIN_X_MONEY     … X の「お金」に最低限確保する枠（候補があれば）
+     MIN_GMAIL_MONEY … メールのお得に最低限確保する枠（候補があれば）
      MAX_GMAIL_MONEY … メールのお得が「お金」で取れる上限
    期限のある要対応（義務）はこれまでどおり最優先で、この上限には数えない。 */
 const MIN_X_MONEY = Number(process.env.MIN_X_MONEY || 3);
+const MIN_GMAIL_MONEY = Number(process.env.MIN_GMAIL_MONEY || 2);
 const MAX_GMAIL_MONEY = Number(process.env.MAX_GMAIL_MONEY || 4);
 
 export const sourceOf = (item) => (item.via === 'gmail' ? 'gmail'
@@ -594,12 +603,13 @@ const isActionMail = (s) => s.item.via === 'gmail' && s.item.lane === 'action';
  * 点数を付けた候補から recs を選ぶ。順番に意味がある。
  *   ① 期限のある要対応（義務）と、返事や手続きが要るメール
  *      … 点数もカテゴリ上限も無視して先に席を取る
- *   ② X の「お金」… MIN_X_MONEY 件まで先に確保する
+ *   ② 「お金」の最低枠 … X を MIN_X_MONEY 件、メールのお得を MIN_GMAIL_MONEY 件まで先に確保する
  *   ③ 残りを点数順。カテゴリ上限と、メールのお得の上限を守る
  */
 export function selectRecs(scoredIn, {
   maxRecs = MAX_RECS, maxPerCategory = MAX_PER_CATEGORY,
   minXMoney = MIN_X_MONEY, maxGmailMoney = MAX_GMAIL_MONEY,
+  minGmailMoney = MIN_GMAIL_MONEY,
 } = {}) {
   const scored = [...scoredIn].sort((a, b) => b.total - a.total);
   const perCategory = new Map();
@@ -624,16 +634,24 @@ export function selectRecs(scoredIn, {
     take(s, refineCategory(s.item));
   }
 
-  // ② X の「お金」を先に確保する。カテゴリ上限は守る。
-  let xMoney = 0;
-  for (const s of scored) {
-    if (xMoney >= minXMoney || picked.length >= maxRecs) break;
-    if (taken.has(s) || sourceOf(s.item) !== 'x') continue;
-    const cat = refineCategory(s.item);
-    if (cat !== 'お金' || (perCategory.get(cat) || 0) >= maxPerCategory) continue;
-    take(s, cat);
-    xMoney += 1;
-  }
+  // ② 「お金」の最低枠を出どころごとに先に確保する。カテゴリ上限は守る。
+  const reserve = (source, n) => {
+    let got = 0;
+    for (const s of scored) {
+      if (got >= n || picked.length >= maxRecs) break;
+      if (taken.has(s) || sourceOf(s.item) !== source) continue;
+      const cat = refineCategory(s.item);
+      if (cat !== 'お金' || (perCategory.get(cat) || 0) >= maxPerCategory) continue;
+      take(s, cat);
+      got += 1;
+    }
+    return got;
+  };
+  reserve('x', minXMoney);
+  /* メールのお得にも最低枠を置く（2026-10-25）。X 側を増やした直後の実行で
+     X の候補が 210件になり、メールのお得が 0件になった。上限だけでは
+     逆側に偏るので、両側に床を置いて「お金」の中で混ざるようにする。 */
+  gmailMoney += reserve('gmail', Math.min(minGmailMoney, maxGmailMoney));
 
   // ③ 残りを点数順に。
   for (const s of scored) {
@@ -832,7 +850,8 @@ async function main() {
   // 既存を消さず末尾に足す。アプリ側の .set() は全置換なので、ここで消すと復元できない。
   // ただし毎日 20件超が積まれるので、放っておくと1週間で200件を超える。
   // 一覧として使えなくなるだけでなく、既出除外の照合も重くなる。
-  const merged = prune(existing.concat(withIds), { dismissedIds, dismissedTitles });
+  const prunedBy = {};
+  const merged = prune(existing.concat(withIds), { dismissedIds, dismissedTitles, stats: prunedBy });
   await fbPut(`${BASE}/recommendations`, merged);
   const removed = existing.length + withIds.length - merged.length;
   console.log(`\n✅ 書き込み完了: ${BASE}/recommendations（既存 ${existing.length} + 新規 ${withIds.length}${removed ? ` − 整理 ${removed}` : ''} = ${merged.length}件）`);
@@ -862,6 +881,14 @@ async function main() {
       candidates: breakdown(scored),
       picked: breakdown(picked),
       lowScoreBySource: lowBySource,
+    },
+    // 整理（prune）の理由別件数と、照合に使った却下リストの件数。
+    // 却下リストの読み込みに失敗すると空のまま進む（fbGet の catch）ので、
+    // その場合は 0 と出て見分けられる。
+    prune: {
+      ...prunedBy,
+      dismissedIdsLoaded: Array.isArray(dismissedIds) ? dismissedIds.length : 0,
+      dismissedTitlesLoaded: Array.isArray(dismissedTitles) ? dismissedTitles.length : 0,
     },
   }, null, 2));
   console.log('=== 完了・課金は発生していません（$0）===');
