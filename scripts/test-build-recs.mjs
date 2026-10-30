@@ -494,6 +494,15 @@ console.log('\n── 選別: お金の枠をメールと X で取り合わせ�
   eq('心拍: 整理の内訳', pruneSummary({ dismissedId: 50, dismissedTitle: 9, expired: 0, duplicate: 0, overLimit: 0, dismissedIdsLoaded: 900, dismissedTitlesLoaded: 1438 }),
     '却下済み 59 / 期限切れ 0 / 重複 0 / 上限超え 0（照合した却下リスト: ID 900件・タイトル 1438件）');
 
+  // 先取りは最大 8 件まで（2026-10-31: 要対応 16 件が先取りで X を押し出した）
+  const replies = Array.from({ length: 16 }, (_, i) => mk('gmail', 0.5, '契約・手続き', { lane: 'action', title: `reply-${i}` }));
+  const xMany = Array.from({ length: 30 }, (_, i) => mk('search', 20 - (i % 10), ['お金', 'グルメ', 'おでかけ', 'ショッピング', 'その他'][i % 5]));
+  const r6 = selectRecs([...replies, ...xMany], { maxRecs: 25, maxPerCategory: 8, minXMoney: 3, maxGmailMoney: 4, minGmailMoney: 2, maxFirst: 8 });
+  eq('要対応の先取りは 8 件まで', r6.picked.filter((s) => s.item.lane === 'action').length, 8);
+  eq('残りの枠は X が点数で取る', r6.picked.filter((s) => s.item.via === 'search').length, 17);
+  const r7 = selectRecs([...replies.slice(0, 3), ...xMany], { maxRecs: 25, maxPerCategory: 8, minXMoney: 3, maxGmailMoney: 4, minGmailMoney: 2, maxFirst: 8 });
+  eq('8 件未満なら全部入る', r7.picked.filter((s) => s.item.lane === 'action').length, 3);
+
   // 実際に拾いたかった形の投稿が点数で落ちないこと
   const fund = score({ title: '不動産ファンドに10万円出資でPayPayポイント5,000円分もらえる！10月31日まで', category: 'お金', url: 'https://x.com/i/status/1', via: 'search', likes: 40 });
   ok('出資でポイントがもらえる投稿は正の点', fund.total > 0);

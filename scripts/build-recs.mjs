@@ -598,18 +598,20 @@ const isObligation = (s) => {
    「面談場所に関するご相談」のような返事待ちのメールは、期限が書かれて
    いなくても見逃すと相手を待たせる。お得情報と点数で競わせない。 */
 const isActionMail = (s) => s.item.via === 'gmail' && s.item.lane === 'action';
+// 上の 2 種類を点数に関係なく先に入れる上限。超えた分は点数で競う。
+const MAX_FIRST = Number(process.env.MAX_FIRST || 8);
 
 /**
  * 点数を付けた候補から recs を選ぶ。順番に意味がある。
  *   ① 期限のある要対応（義務）と、返事や手続きが要るメール
- *      … 点数もカテゴリ上限も無視して先に席を取る
+ *      … 点数もカテゴリ上限も無視して先に席を取る（最大 MAX_FIRST 件。超えた分は ③ へ）
  *   ② 「お金」の最低枠 … X を MIN_X_MONEY 件、メールのお得を MIN_GMAIL_MONEY 件まで先に確保する
  *   ③ 残りを点数順。カテゴリ上限と、メールのお得の上限を守る
  */
 export function selectRecs(scoredIn, {
   maxRecs = MAX_RECS, maxPerCategory = MAX_PER_CATEGORY,
   minXMoney = MIN_X_MONEY, maxGmailMoney = MAX_GMAIL_MONEY,
-  minGmailMoney = MIN_GMAIL_MONEY,
+  minGmailMoney = MIN_GMAIL_MONEY, maxFirst = MAX_FIRST,
 } = {}) {
   const scored = [...scoredIn].sort((a, b) => b.total - a.total);
   const perCategory = new Map();
@@ -629,8 +631,12 @@ export function selectRecs(scoredIn, {
   for (const s of scored) {
     if (isActionMail(s) && !obligations.includes(s)) obligations.push(s);
   }
+  /* ★先取りは最大 maxFirst 件まで（2026-10-31）★
+     メール判定を LLM にしたら要対応の拾える数が 5 → 15 件前後に増え、
+     先取りだけで 25 枠のうち 16 枠がメールになった（X は 9、ポイ活はほぼ 0）。
+     期限が近い順に maxFirst 件までは点数を問わず入れ、残りは ③ で点数で競わせる。 */
   for (const s of obligations) {
-    if (picked.length >= maxRecs) break;
+    if (picked.length >= Math.min(maxRecs, maxFirst)) break;
     take(s, refineCategory(s.item));
   }
 
@@ -807,7 +813,7 @@ async function main() {
      先に席を取る。 */
   const { picked, perCategory, obligations } = selectRecs(scored);
   if (obligations) {
-    console.log(`  要対応（期限あり・返事待ちメール）を先に確保: ${Math.min(obligations, MAX_RECS)}件`);
+    console.log(`  要対応（期限あり・返事待ちメール）を先に確保: ${Math.min(obligations, MAX_FIRST, MAX_RECS)}件（候補 ${obligations}件）`);
   }
 
   console.log('── 選別結果 ──');
