@@ -379,8 +379,25 @@ node scripts/test-collect-gmail-imap.mjs
 
 ant のトークンは数時間で切れ、launchd からの更新が通らない夜がある。
 2026-10-06〜16 と 10-21 以降、どちらも後退が続いていた。
-放置で回すなら、Console で発行した API キー（`sk-ant-api…`）を
+放置で回すなら、Console で発行した API キーを
 `mac/.env` に `CLAUDE_API_KEY=` として置く。
+
+★キーの先頭は1種類ではない★
+2026-10-30 に新しく作ったキーは `sk-ant-usr-…` で始まった（以前は `sk-ant-api03-…`）。
+どちらも x-api-key で通る（count_tokens で 200 を確認済み）。
+確認するときに先頭を `sk-ant-api` 決め打ちで grep すると、正しく書けていても 0 件になる。
+
+キーが通るかは、課金の無い count_tokens で確かめられる。
+
+```bash
+set -a && . mac/.env && set +a && curl -s -o /dev/null -w '%{http_code}\n' \
+  https://api.anthropic.com/v1/messages/count_tokens \
+  -H "x-api-key: $CLAUDE_API_KEY" -H 'anthropic-version: 2023-06-01' \
+  -H 'content-type: application/json' \
+  -d '{"model":"claude-haiku-4-5","messages":[{"role":"user","content":"hi"}]}'
+```
+
+200 なら通る。401 ならキーが無効。
 
 環境変数があれば ant より優先される（`credentialInfo()`）。
 費用は判定の分だけで、月 $0.4 程度（1日12通・Haiku 4.5）。

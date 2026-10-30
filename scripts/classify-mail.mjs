@@ -262,7 +262,8 @@ export function failureReason(e) {
  * ★鍵の種類でヘッダが変わる★
  * `ant auth login` で得られる OAuth トークン（sk-ant-oat01-…）は
  * x-api-key では通らない。Authorization: Bearer と beta ヘッダが要る。
- * 静的なAPIキー（sk-ant-api…）はこれまでどおり x-api-key。
+ * 静的なAPIキー（sk-ant-api03-… / 2026-10 以降に作ったものは sk-ant-usr-…）は
+ * これまでどおり x-api-key。
  * 取り違えると 401 になるだけで、原因が分かりにくい。
  */
 export function authHeaders(key) {
