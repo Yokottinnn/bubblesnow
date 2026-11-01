@@ -29,7 +29,7 @@
 - **サイズ = 優先度**。`PS`（🔴最優先2.3 / 🔴期限迫1.8 / 🟡中1.0 / 🟢低0.65、index.html:65）× 基準 `B=100`。
 - 共有 `requestAnimationFrame` ループ（`BR`/`regB`/`startL`、index.html:70-73）で全泡を物理演算（ゆらぎ・壁反射・減衰）。
 - 各泡にアイコン（`task.icon` or `gIcon()` の絵文字自動判定、index.html:67）、締切バッジ（残り≤15日で表示、≤3日赤点滅）、WIPバッジを重畳。
-- **カテゴリフィルタ**: `all` / `soon`（締切≤7日 = `soonT`）＋ 9カテゴリのタブ（index.html:173）。
+- **カテゴリフィルタ**: `all` / `soon`（締切≤7日 = `soonT`）＋ 10カテゴリのタブ（index.html:173）。
 - **スワイプでフィルタ切替**（左右, index.html:144-155）、タブ横スクロール連動。
 - **プルダウンで再読込**（pull-to-refresh, index.html:145-155/174-175）: `db.ref("users/yokota/tasks").once()` で再取得。
 - **DONEモード** トグル（index.html:172の`sDM`）: 直近30日以内に完了したタスクを泡表示（`doneRecent`, index.html:165-166）。
@@ -101,7 +101,7 @@
 ```
 id        : "t"+Date.now()（seedのみ "t1".."t11"）
 name      : 文字列（"\n"改行可、表示は pre-line）
-category  : 9カテゴリのいずれか（下記）
+category  : 10カテゴリのいずれか（下記）
 detail    : 詳細
 merit     : メリット
 demerit   : デメリット
@@ -117,7 +117,7 @@ completedAt: 完了時ISO日時（完了時のみ付与）
 failedAt  : 失敗時ISO日時（失敗時のみ付与）
 createdAt : （集計で参照。無ければ id の数値部を代用, index.html:126）
 ```
-- カテゴリ `CC`（index.html:64）: 契約・手続き / お金 / ヘルスケア / グルメ / ショッピング / おでかけ / キャリア・学び / ヒト / その他。
+- カテゴリ `CC`（index.html:64）: 契約・手続き / お金 / ヘルスケア / グルメ / ショッピング / おでかけ / 会社 / キャリア・学び / ヒト / その他（「会社」は 2026-11-01 に追加）。
 - ⚠️ 旧カテゴリ名の移行マップ `cm`（index.html:306）: `手続き・お金→契約・手続き`, `キャリア→キャリア・学び`, `学び→キャリア・学び`。読込時に差異があれば書き戻す。
 
 **おすすめ1件**（`INIT_RECS`, index.html:183-208／Make.comプロンプトが正）:
@@ -125,7 +125,7 @@ createdAt : （集計で参照。無ければ id の数値部を代用, index.ht
 id       : "r"+番号（例 "r1".."r24"）
 title    : タイトル
 desc     : 説明
-category : タスクと同じ9カテゴリ
+category : タスクと同じ10カテゴリ
 source   : gmail | calendar | news | x | instagram | line | trend
 icon     : 絵文字
 priority : "🟢低" | "🟡中" | "🔴期限迫"（※recに最優先は無い）
